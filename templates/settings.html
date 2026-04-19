@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rey Capital — Settings</title>
+    <link rel="icon" href="/static/ReyCapital_Icon.png">
+    <style>
+        :root {
+            --bg: #000; --card: #111; --border: #222;
+            --text: #e6edf3; --muted: #8b949e; --accent: #0052CC;
+            --green: #3fb950; --red: #f85149; --orange: #d29922;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0; background: var(--bg); color: var(--text);
+            font-family: -apple-system, Segoe UI, Roboto, sans-serif;
+        }
+        header {
+            padding: 16px 24px; border-bottom: 1px solid var(--border);
+            display: flex; align-items: center; gap: 16px;
+        }
+        header h1 { margin: 0; font-size: 18px; }
+        header a { color: var(--muted); text-decoration: none; font-size: 14px; }
+        header a:hover { color: var(--text); }
+        main { max-width: 1100px; margin: 0 auto; padding: 24px; }
+        .card {
+            background: var(--card); border: 1px solid var(--border);
+            border-radius: 8px; padding: 20px; margin-bottom: 20px;
+        }
+        .card h2 { margin: 0 0 16px; font-size: 16px; }
+        .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+        label { font-size: 13px; color: var(--muted); display: block; margin-bottom: 4px; }
+        input, select, button {
+            background: #0a0a0a; color: var(--text); border: 1px solid var(--border);
+            padding: 8px 12px; border-radius: 6px; font-size: 13px;
+        }
+        input:focus, select:focus { outline: none; border-color: var(--accent); }
+        button {
+            cursor: pointer; background: var(--accent); border-color: var(--accent);
+        }
+        button.ghost { background: transparent; border-color: var(--border); color: var(--muted); }
+        button.danger { background: transparent; border-color: var(--red); color: var(--red); }
+        button:hover { filter: brightness(1.15); }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); }
+        th { color: var(--muted); font-weight: 500; font-size: 12px; text-transform: uppercase; }
+        .badge {
+            display: inline-block; padding: 2px 8px; border-radius: 4px;
+            font-size: 11px; font-weight: 600;
+        }
+        .badge.on { background: rgba(63,185,80,.15); color: var(--green); }
+        .badge.off { background: rgba(248,81,73,.15); color: var(--red); }
+        .pill {
+            background: #0a0a0a; border: 1px solid var(--border);
+            border-radius: 4px; padding: 2px 8px; font-size: 12px;
+            font-family: ui-monospace, monospace;
+            display: inline-flex; gap: 6px; align-items: center;
+        }
+        .pill .k { color: var(--muted); }
+        .alias-editor input { width: 160px; font-family: ui-monospace, monospace; }
+        .alias-editor .broker { width: 120px; }
+        .toast {
+            position: fixed; bottom: 20px; right: 20px; background: var(--card);
+            border: 1px solid var(--border); padding: 12px 16px; border-radius: 6px;
+            font-size: 13px; opacity: 0; transition: opacity .2s;
+        }
+        .toast.show { opacity: 1; }
+    </style>
+</head>
+<body>
+<header>
+    <h1>Settings</h1>
+    <a href="/">← Dashboard</a>
+</header>
+<main>
+    <div class="card">
+        <h2>Active Broker</h2>
+        <div class="row">
+            <input id="active-broker" type="text" placeholder="e.g. ic_markets, cfi" style="width:240px">
+            <button onclick="saveActiveBroker()">Save</button>
+            <span class="pill"><span class="k">current:</span> <span id="current-broker">…</span></span>
+        </div>
+        <p style="color:var(--muted);font-size:12px;margin-top:12px;">
+            Generic symbols are mapped to this broker's tickers when trading. Example: GOLD → XAUUSD (IC Markets) or XAUUSD_ (CFI).
+        </p>
+    </div>
+
+    <div class="card">
+        <h2>Add / Update Symbol</h2>
+        <div class="row" style="margin-bottom:12px;">
+            <div>
+                <label>Generic name</label>
+                <input id="new-generic" placeholder="e.g. GOLD" style="width:160px;text-transform:uppercase">
+            </div>
+            <div>
+                <label>Enabled</label>
+                <select id="new-enabled"><option value="true">true</option><option value="false">false</option></select>
+            </div>
+            <div>
+                <label>Active</label>
+                <select id="new-active"><option value="true">true</option><option value="false">false</option></select>
+            </div>
+        </div>
+        <label>Aliases (broker → ticker)</label>
+        <div id="new-aliases" class="alias-editor"></div>
+        <div class="row" style="margin-top:10px;">
+            <button class="ghost" onclick="addAliasRow()">+ Add alias</button>
+            <button onclick="saveSymbol()">Save symbol</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Safety</h2>
+        <div class="row">
+            <span class="pill">halted: <strong id="sf-halted">…</strong></span>
+            <span class="pill">reason: <span id="sf-reason">—</span></span>
+            <span class="pill">equity: <span id="sf-equity">—</span></span>
+            <span class="pill">peak: <span id="sf-peak">—</span></span>
+            <span class="pill">drawdown: <span id="sf-dd">—</span>%</span>
+            <span class="pill">heartbeat: <span id="sf-hb">—</span>s ago</span>
+        </div>
+        <div class="row" style="margin-top:10px;">
+            <button class="danger" onclick="halt()">Halt Trading</button>
+            <button onclick="resume()">Resume</button>
+            <button class="danger" onclick="flatten()">Flatten All Positions</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Alerts</h2>
+        <div id="notif-form"></div>
+        <div class="row" style="margin-top:10px;">
+            <button onclick="saveNotifs()">Save alerts</button>
+            <button class="ghost" onclick="testNotif('entry')">Test entry</button>
+            <button class="ghost" onclick="testNotif('halt')">Test halt</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>News Blackouts (UTC)</h2>
+        <div class="row">
+            <div>
+                <label>Start</label>
+                <input id="news-start" type="datetime-local">
+            </div>
+            <div>
+                <label>End</label>
+                <input id="news-end" type="datetime-local">
+            </div>
+            <div style="flex:1">
+                <label>Label</label>
+                <input id="news-label" placeholder="FOMC, CPI, etc." style="width:100%">
+            </div>
+            <button onclick="addNews()">Add window</button>
+        </div>
+        <table style="margin-top:12px">
+            <thead><tr><th>Start</th><th>End</th><th>Label</th><th></th></tr></thead>
+            <tbody id="news-tbody"></tbody>
+        </table>
+    </div>
+
+    <div class="card">
+        <h2>Metrics</h2>
+        <div class="row" id="metrics-row"></div>
+        <div class="row" style="margin-top:12px">
+            <label>Backtest threshold</label>
+            <input id="bt-threshold" type="number" step="0.05" value="0.6" style="width:100px">
+            <button onclick="runBacktest()">Run backtest</button>
+            <pre id="bt-out" style="flex:1;background:#0a0a0a;padding:10px;border-radius:6px;margin:0;font-size:12px;color:var(--muted);max-height:180px;overflow:auto"></pre>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Symbols</h2>
+        <table id="sym-table">
+            <thead>
+                <tr>
+                    <th>Generic</th>
+                    <th>Aliases</th>
+                    <th>Enabled</th>
+                    <th>Active</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody id="sym-tbody"></tbody>
+        </table>
+    </div>
+</main>
+<div class="toast" id="toast"></div>
+
+<script>
+let CURRENT = { active_broker: "", symbols: [] };
+
+function toast(msg) {
+    const t = document.getElementById("toast");
+    t.textContent = msg;
+    t.classList.add("show");
+    setTimeout(() => t.classList.remove("show"), 1800);
+}
+
+async function loadAll() {
+    const r = await fetch("/api/settings/symbols");
+    CURRENT = await r.json();
+    document.getElementById("current-broker").textContent = CURRENT.active_broker || "(none)";
+    document.getElementById("active-broker").value = CURRENT.active_broker || "";
+    renderTable();
+}
+
+function renderTable() {
+    const tbody = document.getElementById("sym-tbody");
+    tbody.innerHTML = "";
+    for (const s of CURRENT.symbols) {
+        const tr = document.createElement("tr");
+        const aliasStr = Object.entries(s.aliases || {})
+            .map(([k, v]) => `<span class="pill"><span class="k">${k}:</span>${v}</span>`)
+            .join(" ") || "<span style='color:var(--muted)'>none</span>";
+        tr.innerHTML = `
+            <td><strong>${s.generic}</strong></td>
+            <td>${aliasStr}</td>
+            <td><span class="badge ${s.enabled ? 'on' : 'off'}">${s.enabled ? 'ON' : 'OFF'}</span></td>
+            <td><span class="badge ${s.active ? 'on' : 'off'}">${s.active ? 'ACTIVE' : 'PAUSED'}</span></td>
+            <td style="text-align:right">
+                <button class="ghost" onclick="toggle('${s.generic}','enabled',${!s.enabled})">${s.enabled ? 'Disable' : 'Enable'}</button>
+                <button class="ghost" onclick="toggle('${s.generic}','active',${!s.active})">${s.active ? 'Pause' : 'Activate'}</button>
+                <button class="ghost" onclick="editSymbol('${s.generic}')">Edit</button>
+                <button class="danger" onclick="removeSymbol('${s.generic}')">Remove</button>
+            </td>`;
+        tbody.appendChild(tr);
+    }
+}
+
+function addAliasRow(broker = "", ticker = "") {
+    const wrap = document.getElementById("new-aliases");
+    const row = document.createElement("div");
+    row.className = "row";
+    row.style.marginBottom = "6px";
+    row.innerHTML = `
+        <input class="broker" placeholder="broker (e.g. ic_markets)" value="${broker}">
+        <input placeholder="ticker (e.g. XAUUSD_)" value="${ticker}">
+        <button class="ghost" onclick="this.parentElement.remove()">×</button>`;
+    wrap.appendChild(row);
+}
+
+function collectAliases() {
+    const rows = document.querySelectorAll("#new-aliases .row");
+    const aliases = {};
+    rows.forEach(r => {
+        const inputs = r.querySelectorAll("input");
+        const b = inputs[0].value.trim(), t = inputs[1].value.trim();
+        if (b && t) aliases[b] = t;
+    });
+    return aliases;
+}
+
+async function saveSymbol() {
+    const generic = document.getElementById("new-generic").value.trim().toUpperCase();
+    if (!generic) return toast("Generic name required");
+    const body = {
+        generic,
+        enabled: document.getElementById("new-enabled").value === "true",
+        active: document.getElementById("new-active").value === "true",
+        aliases: collectAliases(),
+    };
+    const r = await fetch("/api/settings/symbols", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(body),
+    });
+    if (!r.ok) return toast("Save failed");
+    toast("Saved " + generic);
+    document.getElementById("new-generic").value = "";
+    document.getElementById("new-aliases").innerHTML = "";
+    loadAll();
+}
+
+function editSymbol(generic) {
+    const s = CURRENT.symbols.find(x => x.generic === generic);
+    if (!s) return;
+    document.getElementById("new-generic").value = s.generic;
+    document.getElementById("new-enabled").value = String(s.enabled);
+    document.getElementById("new-active").value = String(s.active);
+    document.getElementById("new-aliases").innerHTML = "";
+    for (const [b, t] of Object.entries(s.aliases || {})) addAliasRow(b, t);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+async function removeSymbol(generic) {
+    if (!confirm(`Remove ${generic}?`)) return;
+    await fetch(`/api/settings/symbols/${encodeURIComponent(generic)}`, { method: "DELETE" });
+    toast("Removed " + generic);
+    loadAll();
+}
+
+async function toggle(generic, field, value) {
+    await fetch(`/api/settings/symbols/${encodeURIComponent(generic)}/toggle`, {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ [field]: value }),
+    });
+    loadAll();
+}
+
+async function saveActiveBroker() {
+    const broker = document.getElementById("active-broker").value.trim();
+    if (!broker) return toast("Broker name required");
+    await fetch("/api/settings/active_broker", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ broker }),
+    });
+    toast("Active broker set to " + broker);
+    loadAll();
+}
+
+// ── Safety ──
+async function loadSafety() {
+    const r = await fetch("/api/safety/status"); const s = await r.json();
+    document.getElementById("sf-halted").textContent = s.halted ? "YES" : "no";
+    document.getElementById("sf-reason").textContent = s.halt_reason || "—";
+    document.getElementById("sf-equity").textContent = s.last_equity ?? "—";
+    document.getElementById("sf-peak").textContent = s.peak_equity ?? "—";
+    document.getElementById("sf-dd").textContent = s.drawdown_pct ?? 0;
+    document.getElementById("sf-hb").textContent = s.seconds_since_heartbeat ?? 0;
+}
+async function halt() {
+    const reason = prompt("Halt reason?", "manual halt from dashboard"); if (!reason) return;
+    await fetch("/api/safety/halt", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({reason})});
+    toast("Halted"); loadSafety();
+}
+async function resume() {
+    await fetch("/api/safety/resume", {method:"POST"});
+    toast("Resumed"); loadSafety();
+}
+async function flatten() {
+    if (!confirm("Flatten ALL open positions?")) return;
+    const r = await fetch("/api/safety/flatten", {method:"POST"});
+    const data = await r.json();
+    toast(`Closed ${(data.closed||[]).length}, errors ${(data.errors||[]).length}`);
+}
+
+// ── Notifications ──
+let NOTIF = null;
+async function loadNotifs() {
+    const r = await fetch("/api/settings/notifications");
+    NOTIF = await r.json();
+    renderNotifs();
+}
+function renderNotifs() {
+    const host = document.getElementById("notif-form");
+    const ch = NOTIF.channels, ev = NOTIF.events;
+    host.innerHTML = `
+        <h3 style="margin:0 0 8px;font-size:13px;color:var(--muted)">Telegram</h3>
+        <div class="row" style="margin-bottom:10px">
+            <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="tg-en" ${ch.telegram.enabled?'checked':''}>enabled</label>
+            <input id="tg-token" placeholder="bot token" style="flex:1" value="${ch.telegram.bot_token||''}">
+            <input id="tg-chat" placeholder="chat id" style="width:160px" value="${ch.telegram.chat_id||''}">
+        </div>
+        <h3 style="margin:0 0 8px;font-size:13px;color:var(--muted)">Microsoft Teams</h3>
+        <div class="row" style="margin-bottom:10px">
+            <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="tm-en" ${ch.teams.enabled?'checked':''}>enabled</label>
+            <input id="tm-url" placeholder="incoming webhook url" style="flex:1" value="${ch.teams.webhook_url||''}">
+        </div>
+        <h3 style="margin:0 0 8px;font-size:13px;color:var(--muted)">WhatsApp (Meta Cloud API)</h3>
+        <div class="row" style="margin-bottom:10px">
+            <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="wa-en" ${ch.whatsapp.enabled?'checked':''}>enabled</label>
+            <input id="wa-phone" placeholder="phone_number_id" style="width:200px" value="${ch.whatsapp.phone_number_id||''}">
+            <input id="wa-token" placeholder="access token" style="flex:1" value="${ch.whatsapp.access_token||''}">
+            <input id="wa-to" placeholder="+15555551234" style="width:160px" value="${ch.whatsapp.to||''}">
+        </div>
+        <h3 style="margin:10px 0 8px;font-size:13px;color:var(--muted)">Events</h3>
+        <div class="row">
+            ${['entry','exit','halt','breaker','reconnect','resume'].map(k=>`
+                <label style="display:flex;gap:6px;align-items:center">
+                    <input type="checkbox" id="ev-${k}" ${ev[k]?'checked':''}>${k}
+                </label>`).join('')}
+        </div>`;
+}
+async function saveNotifs() {
+    const payload = {
+        channels: {
+            telegram: { enabled: document.getElementById("tg-en").checked,
+                        bot_token: document.getElementById("tg-token").value.trim(),
+                        chat_id: document.getElementById("tg-chat").value.trim() },
+            teams:    { enabled: document.getElementById("tm-en").checked,
+                        webhook_url: document.getElementById("tm-url").value.trim() },
+            whatsapp: { enabled: document.getElementById("wa-en").checked,
+                        phone_number_id: document.getElementById("wa-phone").value.trim(),
+                        access_token:   document.getElementById("wa-token").value.trim(),
+                        to:             document.getElementById("wa-to").value.trim() },
+        },
+        events: Object.fromEntries(['entry','exit','halt','breaker','reconnect','resume']
+            .map(k=>[k, document.getElementById("ev-"+k).checked])),
+    };
+    await fetch("/api/settings/notifications", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(payload)});
+    toast("Alerts saved");
+    loadNotifs();
+}
+async function testNotif(event) {
+    const r = await fetch("/api/settings/notifications/test", {
+        method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({event})});
+    const d = await r.json();
+    toast("Test dispatched: " + JSON.stringify(d).slice(0, 120));
+}
+
+// ── News ──
+async function loadNews() {
+    const r = await fetch("/api/settings/news");
+    const d = await r.json();
+    const tbody = document.getElementById("news-tbody");
+    tbody.innerHTML = "";
+    (d.windows||[]).forEach((w, i) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td>${w.start}</td><td>${w.end}</td><td>${w.label||""}</td>
+            <td style="text-align:right"><button class="danger" onclick="delNews(${i})">Remove</button></td>`;
+        tbody.appendChild(tr);
+    });
+}
+async function addNews() {
+    const start = document.getElementById("news-start").value;
+    const end = document.getElementById("news-end").value;
+    const label = document.getElementById("news-label").value;
+    if (!start || !end) return toast("Start and end required");
+    await fetch("/api/settings/news", {method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({start, end, label})});
+    toast("Window added"); loadNews();
+}
+async function delNews(i) {
+    await fetch("/api/settings/news/" + i, {method:"DELETE"});
+    loadNews();
+}
+
+// ── Metrics ──
+async function loadMetrics() {
+    const r = await fetch("/api/metrics/summary");
+    const m = await r.json();
+    const row = document.getElementById("metrics-row");
+    const cells = [
+        ["Trades", m.trades], ["Win %", m.win_rate_pct], ["PnL", m.total_pnl],
+        ["PF", m.profit_factor], ["Sharpe", m.sharpe], ["Sortino", m.sortino],
+        ["MaxDD %", m.max_drawdown_pct],
+    ];
+    row.innerHTML = cells.map(([k,v])=>`<span class="pill"><span class="k">${k}:</span>${v}</span>`).join(" ");
+}
+async function runBacktest() {
+    const threshold = parseFloat(document.getElementById("bt-threshold").value || "0.6");
+    const r = await fetch("/api/backtest", {method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({threshold})});
+    const d = await r.json();
+    document.getElementById("bt-out").textContent = JSON.stringify(d, null, 2);
+}
+
+loadAll();
+loadSafety();
+loadNotifs();
+loadNews();
+loadMetrics();
+setInterval(loadSafety, 5000);
+</script>
+</body>
+</html>

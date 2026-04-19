@@ -7,7 +7,17 @@ import logging
 from datetime import datetime
 from abc import ABC, abstractmethod
 
+from symbol_registry import get_registry
+
 logger = logging.getLogger(__name__)
+
+
+def _resolve(symbol: str) -> str:
+    """Map a generic symbol to the current active broker's ticker."""
+    try:
+        return get_registry().resolve(symbol)
+    except Exception:
+        return symbol
 
 
 class BaseBroker(ABC):
@@ -39,6 +49,7 @@ class PaperBroker(BaseBroker):
 
     def place_order(self, symbol: str, action: str, qty: float,
                     sl: float, tp: float) -> dict:
+        symbol = _resolve(symbol)
         order = {
             "order_id": f"PAPER-{len(self.order_history) + 1:04d}",
             "symbol": symbol,
@@ -55,6 +66,7 @@ class PaperBroker(BaseBroker):
         return order
 
     def close_position(self, symbol: str) -> dict:
+        symbol = _resolve(symbol)
         if symbol in self.positions:
             pos = self.positions.pop(symbol)
             logger.info(f"[PAPER] [PAPER] Closed {symbol}")
@@ -125,6 +137,7 @@ class MT5Broker(BaseBroker):
             logger.error("MT5 not connected")
             return {"status": "error", "reason": "not connected"}
 
+        symbol = _resolve(symbol)
         order_type = self.mt5.ORDER_TYPE_BUY if action == "BUY" else self.mt5.ORDER_TYPE_SELL
         price_func = self.mt5.symbol_info_tick(symbol)
 
@@ -182,6 +195,7 @@ class MT5Broker(BaseBroker):
         if not self.connected:
             return {"status": "error", "reason": "not connected"}
 
+        symbol = _resolve(symbol)
         positions = self.mt5.positions_get(symbol=symbol)
         if not positions:
             return {"status": "no_position"}
@@ -242,6 +256,7 @@ class BinanceBroker(BaseBroker):
         if not self.exchange:
             return {"status": "error", "reason": "not connected"}
 
+        symbol = _resolve(symbol)
         try:
             side = "buy" if action == "BUY" else "sell"
             order = self.exchange.create_market_order(symbol, side, qty)
@@ -263,6 +278,7 @@ class BinanceBroker(BaseBroker):
     def close_position(self, symbol: str) -> dict:
         if not self.exchange:
             return {"status": "error"}
+        symbol = _resolve(symbol)
         try:
             positions = self.exchange.fetch_positions([symbol])
             for pos in positions:

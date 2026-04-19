@@ -1,105 +1,179 @@
 # GemmaTraderAIBot
 
-A self-learning AI crypto scalping bot driven by Google's **Gemma** LLM (run locally via [Ollama](https://ollama.com)) and executed through **MetaTrader 5**. Includes a Flask + SocketIO live dashboard and a statistically-rigorous self-review loop that adapts the model's prompt based on validated patterns from its own trade history.
+A self-learning crypto/CFD scalping bot driven by Google's **Gemma** LLM
+(run locally via [Ollama](https://ollama.com)) and executed through
+**MetaTrader 5** or **Binance**. Includes a Flask + SocketIO dashboard,
+a settings UI, multi-channel alerts (Telegram / Microsoft Teams / WhatsApp),
+a walk-forward-validated self-review loop, a kill-switch + drawdown
+circuit breaker, and a backtester.
+
+> **Read before trading live:** [ROADMAP.md](ROADMAP.md) — the phased plan
+> for taking this from prototype to risk-adjusted profitable.
+
+---
 
 ## Features
 
-- **LLM-driven decisions** — Gemma analyzes 30+ technical indicators per 1-minute candle and returns structured JSON trade decisions.
-- **Self-learning with guardrails** — the adaptive loop uses walk-forward validation, binomial significance testing, regime scoping, and freshness decay so that small-sample noise is not mistaken for edge.
-- **Risk layer** — per-symbol cooldowns, loss-streak cooldowns, daily loss cap, dynamic confidence threshold, ATR-based SL/TP, MT5-aware lot sizing.
-- **Live dashboard** — Flask + SocketIO UI for monitoring trades, PnL, and Gemma's reasoning in real time.
+- **LLM-driven decisions** — Gemma analyses 30+ technical indicators per
+  1-minute candle and returns structured JSON trade decisions.
+- **Ensemble gate** — optionally requires 4B + 12B agreement before trading.
+- **Feature-dedupe cache** — skips redundant LLM calls when candles barely
+  move, cutting cost and latency.
+- **Self-learning with guardrails** — walk-forward validation, binomial
+  significance testing, regime scoping, and freshness decay so that
+  small-sample noise is not mistaken for edge.
+- **Risk & safety layer** — per-symbol cooldowns, loss-streak cooldowns,
+  daily loss cap, dynamic confidence threshold, ATR-based SL/TP,
+  MT5-aware lot sizing, kill-switch, drawdown circuit breaker, watchdog
+  for stalled loop, MT5 reconnect.
+- **Broker symbol aliasing** — generic names (`GOLD`) map to broker tickers
+  (`XAUUSD` on IC Markets, `XAUUSD_` on CFI) via a hot-reloaded registry.
+- **Multi-channel alerts** — Telegram + Microsoft Teams + WhatsApp (Meta
+  Cloud API), with per-event toggles.
+- **News blackout windows** — skip new entries during FOMC / CPI / etc.
+- **Metrics + backtest** — Sharpe, Sortino, MaxDD, equity curve,
+  per-symbol, per-regime attribution. Replay outcomes against any
+  decision function.
+- **Settings UI** — add/remove/enable/disable/pause symbols, edit aliases,
+  configure alerts, manage blackouts, run backtests, halt trading, flatten
+  all positions.
 - **Paper / live modes** — swap via config or CLI flag.
 
-## Architecture
+---
 
-```
-run.py                   Unified entry point (dashboard + trader + reviewer)
-  |
-  +-- local_trader.py    GemmaLocalTrader - main polling loop
-  +-- gemma_analyzer.py  Sends market data to Ollama, parses decisions
-  +-- risk_manager.py    Validates trades, tracks outcomes, adjusts threshold
-  +-- trade_reviewer.py  Walk-forward validated pattern lessons
-  +-- broker_bridge.py   MT5 order execution
-  +-- mt5_data_feed.py   MT5 market data
-  +-- dashboard.py       Flask + SocketIO web UI
-  +-- server.py          Webhook / API endpoints
-```
-
-## Requirements
-
-- Python 3.10+
-- [Ollama](https://ollama.com) running locally with a Gemma model pulled (`ollama pull gemma3:4b` or larger)
-- MetaTrader 5 terminal installed and logged into your broker
-- Windows (MT5 Python bindings are Windows-only)
-
-## Setup
+## Quickstart
 
 ```bash
 pip install -r requirements.txt
-```
-
-Edit `config.yaml`:
-
-- `ollama.model` — the local Gemma tag (e.g. `gemma3:4b`, `gemma3:12b`)
-- `broker.mt5.login / password / server` — your MT5 credentials (or leave blank and log in via MT5 terminal)
-- `trading.mode` — `paper` or `live`
-- `trading.allowed_symbols` — the instruments you allow
-
-Start Ollama and pull the model:
-
-```bash
-ollama pull gemma3:4b
-ollama serve
-```
-
-Run:
-
-```bash
-python run.py
-```
-
-Dashboard: http://localhost:8050
-
-### CLI flags
-
-```
+cp notifications.yaml.example notifications.yaml   # fill in your tokens
+ollama pull gemma3:4b && ollama serve
 python run.py --mode paper
-python run.py --symbols BTCUSD ETHUSD
-python run.py --port 8080
-python run.py --no-trade          # dashboard only
 ```
+
+Open http://localhost:8050 (dashboard) and http://localhost:8050/settings.
+
+Full install notes in [docs/SETUP.md](docs/SETUP.md).
+
+---
+
+## Project layout
+
+```
+GemmaTraderAIBot/
+├── README.md                   this file
+├── CLAUDE.md                   rules for Claude AI sessions working on this repo
+├── ROADMAP.md                  phased plan for profitability
+├── LICENSE
+├── requirements.txt
+├── pytest.ini
+├── Dockerfile, docker-compose.yml, .dockerignore
+├── config.yaml                 core runtime config
+├── symbols.yaml                broker alias registry (committed, seeded)
+├── notifications.yaml.example  alerts template (copy to notifications.yaml)
+├── news_blackouts.yaml.example blackout template
+├── .env.example
+│
+├── run.py                      entry point (Flask + trader + watchdog)
+├── dashboard.py                Flask routes + REST API
+├── server.py                   webhook/API endpoints (legacy)
+│
+├── local_trader.py             main polling loop
+├── gemma_analyzer.py           Ollama client + prompt
+├── risk_manager.py             pre-trade checks, sizing, outcome recording
+├── safety.py                   kill-switch, drawdown breaker, heartbeat
+├── symbol_registry.py          generic → broker ticker mapping
+├── ensemble.py                 multi-model gate + prompt hash + dedupe cache
+├── trade_reviewer.py           walk-forward pattern validator
+├── notifier.py                 Telegram + Teams + WhatsApp
+├── news_calendar.py            blackout windows
+├── extra_features.py           funding / OB / BTC dom / correlation
+├── metrics.py                  Sharpe/Sortino/MaxDD + attribution
+├── backtester.py               outcome replay
+├── broker_bridge.py            MT5 / Binance / Paper execution
+├── mt5_data_feed.py            MT5 candles + ticks + positions
+│
+├── templates/                  HTML (dashboard + settings)
+├── static/                     logos + icons
+├── scripts/                    standalone utilities (create_doc, test harnesses)
+├── tests/                      pytest suite (fast, no I/O)
+├── docs/                       ARCHITECTURE / SETUP / CONFIG / API
+└── logs/                       trades, decisions, outcomes (git-ignored)
+```
+
+---
+
+## Documentation
+
+| Doc | Purpose |
+|-----|---------|
+| [CLAUDE.md](CLAUDE.md) | Rules for Claude AI sessions editing this repo |
+| [ROADMAP.md](ROADMAP.md) | Phased profitability plan — read before going live |
+| [docs/SETUP.md](docs/SETUP.md) | Install, first-run, Docker, troubleshooting |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Module map, data flow, invariants |
+| [docs/CONFIG.md](docs/CONFIG.md) | Every config file + key explained |
+| [docs/API.md](docs/API.md) | Full HTTP + SocketIO reference |
+
+---
+
+## CLI
+
+```bash
+python run.py                   # defaults from config.yaml
+python run.py --mode paper
+python run.py --symbols BTCUSD ETHUSD   # use generic names from symbols.yaml
+python run.py --port 8080
+python run.py --no-trade         # dashboard only
+```
+
+---
 
 ## Self-learning loop
 
-Every `adaptive.review_every_n_trades` trades, `trade_reviewer.py` regenerates an adaptive context block that is prepended to Gemma's system prompt. A pattern (e.g. "RSI oversold under HIGH_VOL regime on SOLUSD") is promoted into the live prompt only if:
+Every `adaptive.review_every_n_trades` trades, `trade_reviewer.py`
+regenerates an adaptive context block that is prepended to Gemma's
+system prompt. A pattern (e.g. "RSI oversold under HIGH_VOL regime on
+SOLUSD") is promoted into the live prompt only if:
 
-1. It has >=30 samples on an older *train* slice.
-2. It re-holds on a held-out *test* slice (>=10 samples).
-3. It re-holds on the most recent window (>=15 samples).
-4. Its combined sample clears a binomial significance test (p < 0.05 vs 50% baseline).
-5. Its direction (favor / avoid) agrees across all three slices.
+1. It has ≥ 30 samples on an older *train* slice.
+2. It re-holds on a held-out *test* slice (≥ 10 samples).
+3. It re-holds on the most recent window (≥ 15 samples).
+4. Its combined sample clears a binomial significance test (p < 0.05).
+5. Its direction (favour / avoid) agrees across all three slices.
 
-Patterns that stop holding on the recent window are dropped automatically — no lesson ossifies.
+Patterns that stop holding on the recent window are dropped automatically
+— no lesson ossifies.
 
-Tune all thresholds under `adaptive:` in `config.yaml`.
+> The narrative "Gemma reviews itself" output is kept only as an advisory
+> artifact (`logs/gemma_narrative_review.txt`) and is **not** auto-fed back
+> into the live prompt. A 4B model cannot reliably critique its own trades.
 
-> The narrative "Gemma reviews itself" output is kept only as an advisory artifact (`logs/gemma_narrative_review.txt`) and is **not** auto-fed back into the live prompt. A 4B model cannot reliably critique its own trades.
+Full config under `adaptive:` in `config.yaml`; see [docs/CONFIG.md](docs/CONFIG.md).
+
+---
 
 ## Logs
 
-All logs are written under `logs/` (gitignored):
+All logs are written under `logs/` (git-ignored). See
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#state--persistence) for the
+full map.
 
-- `trades.json` — all opened trades
-- `trade_outcomes.json` — closed trades with full indicator snapshots
-- `gemma_decisions.json` — raw Gemma responses
-- `adaptive_context.txt` — current validated-pattern advice (live)
-- `gemma_narrative_review.txt` — advisory self-review (not live)
-- `parameter_adjustments.json` — threshold change history
+---
+
+## Tests
+
+```bash
+pytest                # 20 tests, ~0.5s, no network/MT5/Ollama required
+```
+
+---
 
 ## Disclaimer
 
-This is a research / educational project. Automated trading carries substantial risk of loss. Paper-trade first. Use real capital only after you have validated sustained performance across multiple market regimes. The authors accept no liability for trading losses.
+Research / educational project. Automated trading carries substantial
+risk of loss. **Paper-trade first** (see [ROADMAP.md](ROADMAP.md) Phase 0).
+Use real capital only after you have validated sustained performance across
+multiple market regimes. The authors accept no liability for trading losses.
 
 ## License
 
-See `LICENSE`.
+See [LICENSE](LICENSE).

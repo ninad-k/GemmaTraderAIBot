@@ -26,9 +26,10 @@ from pathlib import Path
 import yaml
 from flask_socketio import SocketIO
 
-from dashboard import app, LOGS_DIR
+from dashboard import app, LOGS_DIR, attach_trader
 from local_trader import GemmaLocalTrader, setup_logging
 from trade_reviewer import TradeReviewer
+from safety import get_safety
 
 logger = logging.getLogger("rey_capital")
 
@@ -127,6 +128,27 @@ def main():
 
         trade_thread = threading.Thread(target=trader_loop, daemon=True)
         trade_thread.start()
+        attach_trader(trader)
+
+        # Watchdog: if no heartbeat for 3×poll_interval, log + notify
+        def watchdog_loop():
+            safety = get_safety(config)
+            poll = config.get("mt5_data", {}).get("poll_interval_seconds", 60)
+            threshold = max(poll * 3, 180)
+            while True:
+                time.sleep(poll)
+                stale = safety.seconds_since_heartbeat()
+                if stale and stale > threshold:
+                    logger.error(f"[WATCHDOG] trader stalled for {stale:.0f}s")
+                    try:
+                        trader.notifier.notify(
+                            "halt",
+                            f"Watchdog: trader stalled for {stale:.0f}s",
+                            {"threshold": threshold},
+                        )
+                    except Exception:
+                        pass
+        threading.Thread(target=watchdog_loop, daemon=True).start()
 
     # SocketIO event handlers
     @socketio.on("connect")

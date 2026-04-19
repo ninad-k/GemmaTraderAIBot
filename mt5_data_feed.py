@@ -14,7 +14,16 @@ from datetime import datetime
 
 import pandas as pd
 
+from symbol_registry import get_registry
+
 logger = logging.getLogger("mt5_data_feed")
+
+
+def _resolve(symbol: str) -> str:
+    try:
+        return get_registry().resolve(symbol)
+    except Exception:
+        return symbol
 
 try:
     import MetaTrader5 as mt5
@@ -101,10 +110,12 @@ class MT5DataFeed:
         """
         Ensure a symbol is visible in Market Watch.
         MT5 requires symbols to be selected before fetching data.
+        Accepts either a generic or broker-resolved ticker.
         """
         if not self.connected:
             return False
 
+        symbol = _resolve(symbol)
         info = mt5.symbol_info(symbol)
         if info is None:
             logger.error(f"Symbol '{symbol}' not found in MT5")
@@ -136,6 +147,7 @@ class MT5DataFeed:
             logger.error("MT5 not connected")
             return pd.DataFrame()
 
+        symbol = _resolve(symbol)
         # Ensure symbol is in Market Watch
         if not self.ensure_symbol(symbol):
             return pd.DataFrame()
@@ -185,6 +197,7 @@ class MT5DataFeed:
         if not self.connected:
             return {}
 
+        symbol = _resolve(symbol)
         if not self.ensure_symbol(symbol):
             return {}
 
@@ -211,7 +224,7 @@ class MT5DataFeed:
             return []
 
         if symbol:
-            positions = mt5.positions_get(symbol=symbol)
+            positions = mt5.positions_get(symbol=_resolve(symbol))
         else:
             positions = mt5.positions_get()
 

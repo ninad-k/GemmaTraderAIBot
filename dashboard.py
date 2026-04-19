@@ -20,6 +20,21 @@ from pathlib import Path
 import yaml
 from flask import Flask, render_template, jsonify, send_from_directory, request
 
+from symbol_registry import get_registry
+from safety import get_safety, flatten_all_positions
+from notifier import get_notifier
+from news_calendar import get_calendar
+import metrics as metrics_mod
+from backtester import run_backtest, confidence_threshold_fn
+
+# Trader handle set by run.py via attach_trader()
+_TRADER = None
+
+
+def attach_trader(trader) -> None:
+    global _TRADER
+    _TRADER = trader
+
 logger = logging.getLogger("dashboard")
 
 app = Flask(__name__)
@@ -355,6 +370,201 @@ def api_lot_overrides():
     except Exception:
         pass
     return jsonify({"overrides": overrides})
+
+
+# ─── Settings: Symbols ───
+
+@app.route("/settings")
+def settings_page():
+    return render_template("settings.html")
+
+
+@app.route("/api/settings/symbols", methods=["GET"])
+def api_settings_symbols_list():
+    reg = get_registry()
+    reg.load()
+    return jsonify({
+        "active_broker": reg.active_broker,
+        "symbols": reg.list(),
+    })
+
+
+@app.route("/api/settings/symbols", methods=["POST"])
+def api_settings_symbols_upsert():
+    data = request.get_json() or {}
+    generic = (data.get("generic") or "").strip()
+    if not generic:
+        return jsonify({"error": "generic required"}), 400
+    aliases = data.get("aliases") or {}
+    if not isinstance(aliases, dict):
+        return jsonify({"error": "aliases must be object"}), 400
+    aliases = {str(k).strip(): str(v).strip() for k, v in aliases.items() if str(v).strip()}
+    reg = get_registry()
+    reg.upsert(
+        generic=generic,
+        aliases=aliases,
+        enabled=bool(data.get("enabled", True)),
+        active=bool(data.get("active", True)),
+    )
+    return jsonify({"status": "ok", "symbol": reg.symbols[generic].__dict__})
+
+
+@app.route("/api/settings/symbols/<generic>", methods=["DELETE"])
+def api_settings_symbols_delete(generic: str):
+    ok = get_registry().remove(generic)
+    return jsonify({"status": "ok" if ok else "not_found"})
+
+
+@app.route("/api/settings/symbols/<generic>/toggle", methods=["POST"])
+def api_settings_symbols_toggle(generic: str):
+    data = request.get_json() or {}
+    reg = get_registry()
+    changed = False
+    if "enabled" in data:
+        changed |= reg.set_enabled(generic, bool(data["enabled"]))
+    if "active" in data:
+        changed |= reg.set_active(generic, bool(data["active"]))
+    return jsonify({"status": "ok" if changed else "not_found"})
+
+
+@app.route("/api/settings/active_broker", methods=["POST"])
+def api_settings_active_broker():
+    data = request.get_json() or {}
+    broker = (data.get("broker") or "").strip()
+    if not broker:
+        return jsonify({"error": "broker required"}), 400
+    get_registry().set_active_broker(broker)
+    return jsonify({"status": "ok", "active_broker": broker})
+
+
+# ─── Safety: kill-switch + flatten ───
+
+@app.route("/api/safety/status")
+def api_safety_status():
+    s = get_safety()
+    return jsonify({
+        "halted": s.is_halted(),
+        "halt_reason": s.state.halt_reason,
+        "halted_at": s.state.halted_at,
+        "peak_equity": s.state.peak_equity,
+        "last_equity": s.state.last_equity,
+        "drawdown_pct": round(s.drawdown_pct(), 3),
+        "last_heartbeat": s.state.last_heartbeat,
+        "seconds_since_heartbeat": round(s.seconds_since_heartbeat(), 1),
+        "breaker_tripped": s.state.breaker_tripped,
+    })
+
+
+@app.route("/api/safety/halt", methods=["POST"])
+def api_safety_halt():
+    reason = (request.get_json() or {}).get("reason", "manual halt from dashboard")
+    get_safety().halt(reason, source="dashboard")
+    return jsonify({"status": "halted"})
+
+
+@app.route("/api/safety/resume", methods=["POST"])
+def api_safety_resume():
+    get_safety().resume()
+    return jsonify({"status": "resumed"})
+
+
+@app.route("/api/safety/flatten", methods=["POST"])
+def api_safety_flatten():
+    if _TRADER is None:
+        return jsonify({"error": "trader not attached"}), 503
+    result = flatten_all_positions(_TRADER.broker, _TRADER.mt5_feed)
+    try:
+        get_notifier().notify(
+            "halt",
+            f"Flatten-all executed: {len(result['closed'])} closed, {len(result['errors'])} errors",
+        )
+    except Exception:
+        pass
+    return jsonify(result)
+
+
+# ─── Metrics + backtest ───
+
+@app.route("/api/metrics/summary")
+def api_metrics_summary():
+    start = float(request.args.get("start_balance", 100_000))
+    return jsonify(metrics_mod.summary(start_balance=start))
+
+
+@app.route("/api/metrics/equity_curve")
+def api_metrics_equity_curve():
+    start = float(request.args.get("start_balance", 100_000))
+    return jsonify({"curve": metrics_mod.equity_curve(start_balance=start)})
+
+
+@app.route("/api/metrics/per_symbol")
+def api_metrics_per_symbol():
+    return jsonify(metrics_mod.per_symbol())
+
+
+@app.route("/api/metrics/per_regime")
+def api_metrics_per_regime():
+    return jsonify(metrics_mod.per_regime())
+
+
+@app.route("/api/backtest", methods=["POST"])
+def api_backtest():
+    data = request.get_json() or {}
+    threshold = float(data.get("threshold", 0.6))
+    start = float(data.get("start_balance", 100_000))
+    limit = data.get("limit")
+    fn = confidence_threshold_fn(threshold)
+    return jsonify(run_backtest(fn, starting_balance=start, limit=limit))
+
+
+# ─── Alerts / notifications settings ───
+
+@app.route("/api/settings/notifications", methods=["GET"])
+def api_settings_notifications_get():
+    n = get_notifier()
+    n.load()
+    return jsonify(n.get_config())
+
+
+@app.route("/api/settings/notifications", methods=["POST"])
+def api_settings_notifications_post():
+    data = request.get_json() or {}
+    if "channels" not in data or "events" not in data:
+        return jsonify({"error": "channels and events required"}), 400
+    get_notifier().save(data)
+    return jsonify({"status": "ok"})
+
+
+@app.route("/api/settings/notifications/test", methods=["POST"])
+def api_settings_notifications_test():
+    event = (request.get_json() or {}).get("event", "entry")
+    result = get_notifier().notify(event, "Test message from dashboard")
+    return jsonify(result)
+
+
+# ─── News blackouts ───
+
+@app.route("/api/settings/news", methods=["GET"])
+def api_settings_news_get():
+    c = get_calendar()
+    c.load()
+    return jsonify({"windows": c.windows})
+
+
+@app.route("/api/settings/news", methods=["POST"])
+def api_settings_news_post():
+    data = request.get_json() or {}
+    start = data.get("start"); end = data.get("end"); label = data.get("label", "")
+    if not (start and end):
+        return jsonify({"error": "start and end required"}), 400
+    get_calendar().add(start, end, label)
+    return jsonify({"status": "ok"})
+
+
+@app.route("/api/settings/news/<int:index>", methods=["DELETE"])
+def api_settings_news_delete(index: int):
+    ok = get_calendar().remove(index)
+    return jsonify({"status": "ok" if ok else "not_found"})
 
 
 # ─── Main (standalone mode) ───

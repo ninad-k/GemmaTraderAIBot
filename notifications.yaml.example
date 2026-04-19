@@ -1,0 +1,26 @@
+# Copy to notifications.yaml (git-ignored) and fill in your tokens.
+# Manage via /settings in the dashboard instead of hand-editing if you prefer.
+
+channels:
+  telegram:
+    enabled: false
+    bot_token: ""         # from @BotFather
+    chat_id: ""           # your user id or group chat id
+
+  teams:
+    enabled: false
+    webhook_url: ""       # Teams channel → Connectors → Incoming Webhook
+
+  whatsapp:
+    enabled: false
+    phone_number_id: ""   # Meta Business → WhatsApp → API setup
+    access_token: ""      # prefer a permanent system-user token for prod
+    to: ""                # E.164, e.g. +15555551234
+
+events:
+  entry: true
+  exit: true
+  halt: true
+  breaker: true
+  reconnect: true
+  resume: true

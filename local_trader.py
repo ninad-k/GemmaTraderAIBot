@@ -31,9 +31,14 @@ import requests
 import yaml
 import schedule
 
-from gemma_analyzer import analyze_with_gemma
+from gemma_analyzer import analyze_with_gemma, SYSTEM_PROMPT
 from risk_manager import RiskManager
 from broker_bridge import create_broker
+from symbol_registry import get_registry
+from safety import get_safety, flatten_all_positions
+from notifier import get_notifier
+from ensemble import ensemble_decide, prompt_hash, get_dedupe_cache
+from news_calendar import get_calendar
 
 logger = logging.getLogger("rey_capital_trader")
 
@@ -523,11 +528,21 @@ class GemmaLocalTrader:
     def __init__(self, config: dict, symbols: list = None, interval: str = None):
         self.config = config
         self.interval = interval or config.get("mt5_data", {}).get("timeframe", "1m")
-        self.symbols = symbols or config["trading"]["allowed_symbols"]
+        self.registry = get_registry()
+        if symbols:
+            self.symbols = symbols
+        else:
+            active = self.registry.active_generics()
+            self.symbols = active or config["trading"]["allowed_symbols"]
         self.risk_manager = RiskManager(config)
         self.broker = create_broker(config)
         self.cycle_count = 0
         self.socketio = None  # Set externally by run.py for WebSocket
+        self.safety = get_safety(config)
+        self.notifier = get_notifier()
+        self.safety.attach_notifier(self.notifier)
+        self.news = get_calendar()
+        self.dedupe = get_dedupe_cache(ttl_seconds=int(config.get("ensemble", {}).get("dedupe_ttl", 60)))
 
         # Initialize data sources
         self.use_mt5 = config.get("data_source", "mt5") == "mt5"
@@ -594,8 +609,26 @@ class GemmaLocalTrader:
             f"Vol: {indicators.get('vol_trend', '?')}"
         )
 
-        # ── Ask Gemma 4 ──
-        decision = analyze_with_gemma(indicators, self.config)
+        # ── Safety gate: halt blocks all new entries ──
+        if self.safety.is_halted():
+            logger.warning(f"  Skipping {symbol}: trading halted ({self.safety.state.halt_reason})")
+            return
+
+        # ── News blackout ──
+        in_blackout, label = self.news.in_blackout()
+        if in_blackout:
+            logger.info(f"  Skipping {symbol}: news blackout ({label})")
+            return
+
+        # ── Ask Gemma (with dedupe cache + optional ensemble) ──
+        cached = self.dedupe.lookup(indicators)
+        if cached is not None:
+            decision = cached
+            logger.info(f"  [dedupe] reusing cached decision for {symbol}")
+        else:
+            decision = ensemble_decide(indicators, self.config, analyze_with_gemma)
+            self.dedupe.store(indicators, decision)
+        decision["prompt_hash"] = prompt_hash(SYSTEM_PROMPT, decision.get("prompt_sent", ""))
         logger.info(
             f"  Gemma: {decision['action']} "
             f"({decision['confidence']:.0%}) — {decision['reason']}"
@@ -732,6 +765,15 @@ class GemmaLocalTrader:
 
             # Write trade journal entry with full Gemma thinking
             self._write_journal_entry(trade_data, decision, indicators, pos_size, balance)
+
+            try:
+                self.notifier.notify(
+                    "entry",
+                    f"{decision['action']} {symbol} qty={pos_size['qty']} @ {close}",
+                    {"sl": sl, "tp": tp, "conf": f"{decision['confidence']:.2f}"},
+                )
+            except Exception as e:
+                logger.warning(f"entry notify failed: {e}")
 
             if self.socketio:
                 self.socketio.emit("new_trade", trade_data)
@@ -971,6 +1013,15 @@ class GemmaLocalTrader:
                 self.risk_manager.record_outcome(trade, close_price, profit)
                 self.risk_manager.close_trade(trade["symbol"], profit)
 
+                try:
+                    self.notifier.notify(
+                        "exit",
+                        f"Closed {trade['symbol']} profit={profit:.2f}",
+                        {"action": trade.get("action"), "qty": trade.get("qty")},
+                    )
+                except Exception as e:
+                    logger.warning(f"exit notify failed: {e}")
+
                 if self.socketio:
                     self.socketio.emit("trade_closed", {
                         "symbol": trade["symbol"],
@@ -1008,10 +1059,32 @@ class GemmaLocalTrader:
         except Exception as e:
             logger.warning(f"Could not write decision log: {e}")
 
+    def _reconnect_mt5_if_needed(self) -> None:
+        """If MT5 feed/broker dropped, try to re-init; notify on transition."""
+        feed_ok = bool(self.mt5_feed and self.mt5_feed.connected)
+        if self.use_mt5 and not feed_ok:
+            try:
+                from mt5_data_feed import MT5DataFeed
+                self.mt5_feed = MT5DataFeed(self.config)
+                if self.mt5_feed.connected:
+                    logger.info("MT5 reconnected")
+                    try:
+                        self.notifier.notify("reconnect", "MT5 reconnected")
+                    except Exception:
+                        pass
+            except Exception as e:
+                logger.warning(f"MT5 reconnect attempt failed: {e}")
+
     def run_cycle(self):
         """Run one analysis cycle for all symbols."""
         self.cycle_count += 1
+        self.safety.heartbeat()
+        self._reconnect_mt5_if_needed()
         balance = self.broker.get_balance()
+        try:
+            self.safety.update_equity(balance)
+        except Exception:
+            pass
 
         logger.info(f"\n{'#'*60}")
         logger.info(f"  REY CAPITAL AI BOT — Cycle #{self.cycle_count}")
@@ -1022,6 +1095,16 @@ class GemmaLocalTrader:
 
         # Check if any positions were closed by SL/TP
         self._check_closed_positions()
+
+        # Refresh active symbol list from the registry so settings-UI
+        # changes take effect without a restart.
+        try:
+            self.registry.load()
+            live = self.registry.active_generics()
+            if live:
+                self.symbols = live
+        except Exception:
+            pass
 
         # Analyze each symbol
         for symbol in self.symbols:

@@ -1,0 +1,33 @@
+version: "3.9"
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: rey-ollama
+    volumes:
+      - ollama_models:/root/.ollama
+    ports:
+      - "11434:11434"
+    restart: unless-stopped
+
+  bot:
+    build: .
+    container_name: rey-bot
+    depends_on:
+      - ollama
+    environment:
+      # Override ollama url inside compose network
+      OLLAMA_URL: "http://ollama:11434/api/generate"
+    volumes:
+      - ./logs:/app/logs
+      - ./config.yaml:/app/config.yaml
+      - ./symbols.yaml:/app/symbols.yaml
+      - ./notifications.yaml:/app/notifications.yaml
+      - ./news_blackouts.yaml:/app/news_blackouts.yaml
+    ports:
+      - "8050:8050"
+    restart: unless-stopped
+    command: ["python", "run.py", "--mode", "paper"]
+
+volumes:
+  ollama_models:

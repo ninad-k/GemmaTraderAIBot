@@ -380,3 +380,5 @@ class RiskManager:
             self.trade_log_path.write_text(json.dumps(trades, indent=2))
         except Exception as e:
             logger.error(f"Failed to log trade: {e}")
+
+

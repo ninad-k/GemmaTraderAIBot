@@ -14,7 +14,7 @@ from datetime import datetime
 
 import pandas as pd
 
-from symbol_registry import get_registry
+from gemma_trader.symbol_registry import get_registry
 
 logger = logging.getLogger("mt5_data_feed")
 
@@ -313,3 +313,6 @@ class MT5DataFeed:
             mt5.shutdown()
             self.connected = False
             logger.info("MT5 Data Feed disconnected")
+
+
+

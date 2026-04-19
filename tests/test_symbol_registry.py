@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from symbol_registry import SymbolRegistry
+from gemma_trader.symbol_registry import SymbolRegistry
 
 
 def test_resolve_and_reverse(tmp_path: Path):

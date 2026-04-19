@@ -1,9 +1,9 @@
 import json
 from pathlib import Path
 
-import metrics
-import backtester
-from backtester import run_backtest, confidence_threshold_fn
+import gemma_trader.metrics as metrics
+import gemma_trader.backtester as backtester
+from gemma_trader.backtester import run_backtest, confidence_threshold_fn
 
 
 OUTCOMES = [

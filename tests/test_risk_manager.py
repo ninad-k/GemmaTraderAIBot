@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from risk_manager import RiskManager
+from gemma_trader.risk_manager import RiskManager
 
 
 BASE_CONFIG = {

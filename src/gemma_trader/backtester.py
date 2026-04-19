@@ -6,7 +6,7 @@ against an arbitrary decision function. Useful for offline A/B of a
 new prompt or model without risking real capital.
 
 Usage:
-    from backtester import run_backtest
+    from gemma_trader.backtester import run_backtest
     result = run_backtest(decision_fn=my_fn)
 """
 
@@ -114,3 +114,6 @@ def confidence_threshold_fn(threshold: float) -> Callable[[dict], dict]:
             return d
         return gated
     return wrapped
+
+
+

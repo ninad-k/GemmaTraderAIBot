@@ -64,6 +64,7 @@ GemmaTraderAIBot/
 ├── CLAUDE.md                   rules for Claude AI sessions working on this repo
 ├── ROADMAP.md                  phased plan for profitability
 ├── LICENSE
+├── pyproject.toml              package metadata (src layout)
 ├── requirements.txt
 ├── pytest.ini
 ├── Dockerfile, docker-compose.yml, .dockerignore
@@ -73,24 +74,29 @@ GemmaTraderAIBot/
 ├── news_blackouts.yaml.example blackout template
 ├── .env.example
 │
-├── run.py                      entry point (Flask + trader + watchdog)
-├── dashboard.py                Flask routes + REST API
-├── server.py                   webhook/API endpoints (legacy)
+├── run.py                      compatibility entrypoint
+├── dashboard.py                compatibility entrypoint
+├── server.py                   compatibility entrypoint
 │
-├── local_trader.py             main polling loop
-├── gemma_analyzer.py           Ollama client + prompt
-├── risk_manager.py             pre-trade checks, sizing, outcome recording
-├── safety.py                   kill-switch, drawdown breaker, heartbeat
-├── symbol_registry.py          generic → broker ticker mapping
-├── ensemble.py                 multi-model gate + prompt hash + dedupe cache
-├── trade_reviewer.py           walk-forward pattern validator
-├── notifier.py                 Telegram + Teams + WhatsApp
-├── news_calendar.py            blackout windows
-├── extra_features.py           funding / OB / BTC dom / correlation
-├── metrics.py                  Sharpe/Sortino/MaxDD + attribution
-├── backtester.py               outcome replay
-├── broker_bridge.py            MT5 / Binance / Paper execution
-├── mt5_data_feed.py            MT5 candles + ticks + positions
+├── src/
+│   └── gemma_trader/           main Python package
+│       ├── run.py              entry point (Flask + trader + watchdog)
+│       ├── dashboard.py        Flask routes + REST API
+│       ├── server.py           webhook/API endpoints (legacy)
+│       ├── local_trader.py     main polling loop
+│       ├── gemma_analyzer.py   Ollama client + prompt
+│       ├── risk_manager.py     pre-trade checks, sizing, outcome recording
+│       ├── safety.py           kill-switch, drawdown breaker, heartbeat
+│       ├── symbol_registry.py  generic → broker ticker mapping
+│       ├── ensemble.py         multi-model gate + prompt hash + dedupe cache
+│       ├── trade_reviewer.py   walk-forward pattern validator
+│       ├── notifier.py         Telegram + Teams + WhatsApp
+│       ├── news_calendar.py    blackout windows
+│       ├── extra_features.py   funding / OB / BTC dom / correlation
+│       ├── metrics.py          Sharpe/Sortino/MaxDD + attribution
+│       ├── backtester.py       outcome replay
+│       ├── broker_bridge.py    MT5 / Binance / Paper execution
+│       └── mt5_data_feed.py    MT5 candles + ticks + positions
 │
 ├── templates/                  HTML (dashboard + settings)
 ├── static/                     logos + icons

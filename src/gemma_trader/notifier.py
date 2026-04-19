@@ -37,7 +37,8 @@ import yaml
 
 logger = logging.getLogger(__name__)
 
-CONFIG_PATH = Path(__file__).parent / "notifications.yaml"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+CONFIG_PATH = PROJECT_ROOT / "notifications.yaml"
 
 DEFAULT_CONFIG = {
     "channels": {
@@ -168,3 +169,5 @@ def get_notifier() -> Notifier:
     if _singleton is None:
         _singleton = Notifier()
     return _singleton
+
+

@@ -23,7 +23,8 @@ import yaml
 
 logger = logging.getLogger(__name__)
 
-CONFIG_PATH = Path(__file__).parent / "news_blackouts.yaml"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+CONFIG_PATH = PROJECT_ROOT / "news_blackouts.yaml"
 
 
 class NewsCalendar:
@@ -81,3 +82,5 @@ def get_calendar() -> NewsCalendar:
     if _singleton is None:
         _singleton = NewsCalendar()
     return _singleton
+
+

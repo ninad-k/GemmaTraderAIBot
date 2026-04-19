@@ -309,3 +309,5 @@ Respond with a plain text list of lessons (no JSON, no markdown)."""
     except Exception as e:
         logger.error(f"Trade review failed: {e}")
         return ""
+
+

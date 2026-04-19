@@ -7,7 +7,7 @@ import logging
 from datetime import datetime
 from abc import ABC, abstractmethod
 
-from symbol_registry import get_registry
+from gemma_trader.symbol_registry import get_registry
 
 logger = logging.getLogger(__name__)
 
@@ -304,3 +304,6 @@ def create_broker(config: dict) -> BaseBroker:
     else:
         logger.warning(f"Unknown broker '{broker_name}', falling back to paper")
         return PaperBroker()
+
+
+

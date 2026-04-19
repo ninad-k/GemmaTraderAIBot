@@ -142,3 +142,5 @@ def per_regime() -> dict:
             "pnl": round(sum(rets), 2),
         }
     return out
+
+

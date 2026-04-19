@@ -31,14 +31,14 @@ import requests
 import yaml
 import schedule
 
-from gemma_analyzer import analyze_with_gemma, SYSTEM_PROMPT
-from risk_manager import RiskManager
-from broker_bridge import create_broker
-from symbol_registry import get_registry
-from safety import get_safety, flatten_all_positions
-from notifier import get_notifier
-from ensemble import ensemble_decide, prompt_hash, get_dedupe_cache
-from news_calendar import get_calendar
+from gemma_trader.gemma_analyzer import analyze_with_gemma, SYSTEM_PROMPT
+from gemma_trader.risk_manager import RiskManager
+from gemma_trader.broker_bridge import create_broker
+from gemma_trader.symbol_registry import get_registry
+from gemma_trader.safety import get_safety, flatten_all_positions
+from gemma_trader.notifier import get_notifier
+from gemma_trader.ensemble import ensemble_decide, prompt_hash, get_dedupe_cache
+from gemma_trader.news_calendar import get_calendar
 
 logger = logging.getLogger("rey_capital_trader")
 
@@ -551,7 +551,7 @@ class GemmaLocalTrader:
 
         if self.use_mt5:
             try:
-                from mt5_data_feed import MT5DataFeed
+                from gemma_trader.mt5_data_feed import MT5DataFeed
                 self.mt5_feed = MT5DataFeed(config)
                 if not self.mt5_feed.connected:
                     logger.warning("MT5 not connected, will use TradingView fallback")
@@ -1064,7 +1064,7 @@ class GemmaLocalTrader:
         feed_ok = bool(self.mt5_feed and self.mt5_feed.connected)
         if self.use_mt5 and not feed_ok:
             try:
-                from mt5_data_feed import MT5DataFeed
+                from gemma_trader.mt5_data_feed import MT5DataFeed
                 self.mt5_feed = MT5DataFeed(self.config)
                 if self.mt5_feed.connected:
                     logger.info("MT5 reconnected")
@@ -1210,3 +1210,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+

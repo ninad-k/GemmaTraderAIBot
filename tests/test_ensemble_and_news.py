@@ -1,8 +1,8 @@
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from ensemble import ensemble_decide, prompt_hash, FeatureDedupeCache
-from news_calendar import NewsCalendar
+from gemma_trader.ensemble import ensemble_decide, prompt_hash, FeatureDedupeCache
+from gemma_trader.news_calendar import NewsCalendar
 
 
 def test_prompt_hash_is_stable():

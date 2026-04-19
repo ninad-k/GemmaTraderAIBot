@@ -29,7 +29,7 @@ from datetime import datetime
 from math import comb
 from pathlib import Path
 
-from gemma_analyzer import review_trades_with_gemma
+from gemma_trader.gemma_analyzer import review_trades_with_gemma
 
 logger = logging.getLogger("trade_reviewer")
 
@@ -409,3 +409,6 @@ class TradeReviewer:
             logger.debug(f"Adaptive context saved ({len(context)} chars)")
         except Exception as e:
             logger.error(f"Failed to save adaptive context: {e}")
+
+
+

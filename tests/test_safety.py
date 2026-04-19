@@ -1,6 +1,6 @@
 from pathlib import Path
 
-import safety
+import gemma_trader.safety as safety
 
 
 def test_drawdown_breaker_trips(monkeypatch, tmp_path):

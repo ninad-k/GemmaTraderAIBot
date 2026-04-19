@@ -107,3 +107,5 @@ def _pearson(a: list[float], b: list[float]) -> float:
     db = sum((y - mb) ** 2 for y in b)
     denom = (da * db) ** 0.5
     return 0.0 if denom == 0 else num / denom
+
+

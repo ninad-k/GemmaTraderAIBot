@@ -1,0 +1,103 @@
+# =====================================================
+#  Rey Capital AI Bot - Crypto M1 Scalper Configuration
+# =====================================================
+
+server:
+  host: "0.0.0.0"
+  port: 8050
+
+# --- Data Source ---
+data_source: "mt5"
+
+mt5_data:
+  timeframe: "1m"
+  n_bars: 500
+  poll_interval_seconds: 60  # poll every 60s for new 1M candle
+
+# --- AI Model ---
+ollama:
+  url: "http://localhost:11434/api/generate"
+  model: "gemma4"
+  temperature: 0.1
+  timeout: 120
+  num_predict: 8192
+
+# --- Trading ---
+trading:
+  mode: "live"
+  confidence_threshold: 0.65  # slightly higher for live crypto trading
+  max_position_size_pct: 1.0  # 1% of account per trade (conservative for live)
+  max_open_trades: 5
+  cooldown_minutes: 3  # 3 min cooldown between trades on same symbol (crypto moves fast)
+  allowed_symbols:
+    - "BTCUSD"         # Bitcoin - highest liquidity
+    - "ETHUSD"         # Ethereum - second largest
+    - "LTCUSD"         # Litecoin - fast mover
+    - "XRPUSD"         # Ripple - volatile
+    - "SOLUSD"         # Solana - trending
+
+# --- Risk Management ---
+risk_management:
+  stop_loss_atr_multiplier: 1.0     # tight for 1M scalping
+  take_profit_atr_multiplier: 1.5   # 1.5:1 reward-to-risk
+  max_daily_loss_pct: 5.0
+  max_drawdown_pct: 10.0
+
+# --- Broker (MetaTrader 5) ---
+broker:
+  name: "mt5"
+  mt5:
+    login: 0
+    password: ""
+    server: ""
+    magic: 240411
+  binance:
+    api_key: ""
+    api_secret: ""
+
+# --- Self-Learning ---
+adaptive:
+  enabled: true
+
+  # Review cadence
+  review_every_n_trades: 50         # statistics need samples; 50 is a reasonable cadence
+  min_trades_for_adaptation: 30     # below this: no threshold changes, no pattern lessons
+
+  # Walk-forward validation (splits outcomes chronologically train|test)
+  train_fraction: 0.7               # older 70% used to derive patterns
+  min_train_samples: 30             # per-pattern minimum in train slice
+  min_test_samples: 10              # per-pattern minimum in test slice
+
+  # Statistical significance (binomial test vs 50% baseline)
+  significance_alpha: 0.05          # pattern must have p-value below this
+  favorable_wr: 0.60                # pattern win rate must exceed this to FAVOR
+  avoid_wr: 0.40                    # pattern win rate must be below this to AVOID
+
+  # Recency / decay — pattern must still hold in a fresh window or is dropped
+  analysis_window: 100              # used for threshold adjustment AND freshness check
+  freshness_min_samples: 15         # fresh-window minimum to re-confirm a pattern
+
+  # Regime scoping — lessons are bucketed per regime to avoid cross-regime bleed
+  regime_scoping: true
+
+  # Weekly Gemma narrative self-review
+  # NOTE: a 4B model cannot meaningfully critique its own trades; its narrative is
+  # kept for human inspection only and is NOT auto-fed back into live prompts.
+  weekly_review: false
+
+  # Threshold bounds (unchanged)
+  max_confidence_threshold: 0.85
+  min_confidence_threshold: 0.50
+
+  # Loss-streak cooldown
+  cooldown_on_streak_loss: 3
+  cooldown_duration_minutes: 15
+
+# --- Logging ---
+logging:
+  level: "INFO"
+  trade_log: "logs/trades.json"
+  decision_log: "logs/gemma_decisions.json"
+  outcome_log: "logs/trade_outcomes.json"
+  adaptive_context: "logs/adaptive_context.txt"
+  parameter_adjustments: "logs/parameter_adjustments.json"

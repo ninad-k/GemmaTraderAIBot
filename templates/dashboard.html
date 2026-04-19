@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rey Capital AI Bot Dashboard</title>
+    <link rel="icon" href="/static/ReyCapital_Icon.png">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+    <style>
+        /* ─── Theme Variables ─── */
+        [data-theme="dark"] {
+            --bg-primary: #000000;
+            --bg-secondary: #0a0a0a;
+            --bg-card: #111111;
+            --bg-card-hover: #1a1a1a;
+            --border: #222222;
+            --text-primary: #e6edf3;
+            --text-secondary: #8b949e;
+            --text-muted: #5a6370;
+            --accent: #0052CC;
+            --accent-light: #1a73e8;
+            --accent-glow: rgba(0,82,204,0.15);
+            --green: #3fb950;
+            --green-bg: rgba(63,185,80,0.12);
+            --red: #f85149;
+            --red-bg: rgba(248,81,73,0.12);
+            --orange: #d29922;
+            --orange-bg: rgba(210,153,34,0.12);
+            --purple: #bc8cff;
+            --shadow: 0 2px 8px rgba(0,0,0,0.5);
+        }
+        [data-theme="light"] {
+            --bg-primary: #ffffff;
+            --bg-secondary: #f8f9fa;
+            --bg-card: #ffffff;
+            --bg-card-hover: #f0f4f8;
+            --border: #d0d7de;
+            --text-primary: #1f2328;
+            --text-secondary: #656d76;
+            --text-muted: #8b949e;
+            --accent: #0052CC;
+            --accent-light: #1a73e8;
+            --accent-glow: rgba(0,82,204,0.08);
+            --green: #1a7f37;
+            --green-bg: rgba(26,127,55,0.08);
+            --red: #cf222e;
+            --red-bg: rgba(207,34,46,0.08);
+            --orange: #bf8700;
+            --orange-bg: rgba(191,135,0,0.08);
+            --purple: #8250df;
+            --shadow: 0 1px 4px rgba(0,0,0,0.08);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            transition: background 0.3s, color 0.3s;
+        }
+
+        /* ─── Header ─── */
+        .header {
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+            padding: 12px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            box-shadow: var(--shadow);
+        }
+        .header-left { display: flex; align-items: center; gap: 12px; }
+        .header-left img { height: 28px; }
+        .header-left h1 { font-size: 16px; font-weight: 600; color: var(--accent); }
+        .header-right { display: flex; align-items: center; gap: 12px; }
+
+        .badge {
+            padding: 3px 10px;
+            border-radius: 16px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+        .badge-live { background: var(--green-bg); color: var(--green); border: 1px solid var(--green); }
+        .badge-paper { background: var(--orange-bg); color: var(--orange); border: 1px solid var(--orange); }
+        .badge-running { background: var(--green-bg); color: var(--green); }
+
+        .btn {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            padding: 5px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .btn:hover { border-color: var(--accent); color: var(--accent); }
+        .update-time { font-size: 11px; color: var(--text-muted); }
+
+        /* ─── Container ─── */
+        .container { max-width: 1440px; margin: 0 auto; padding: 20px; }
+
+        /* ─── Stats Row ─── */
+        .stats { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 20px; }
+        @media (max-width: 1100px) { .stats { grid-template-columns: repeat(3, 1fr); } }
+        @media (max-width: 600px) { .stats { grid-template-columns: repeat(2, 1fr); } }
+
+        .stat {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 16px;
+            transition: all 0.2s;
+        }
+        .stat:hover { background: var(--bg-card-hover); border-color: var(--accent); }
+        .stat-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); margin-bottom: 6px; }
+        .stat-value { font-size: 24px; font-weight: 700; line-height: 1.2; }
+        .stat-sub { font-size: 11px; color: var(--text-secondary); margin-top: 3px; }
+        .c-green { color: var(--green); }
+        .c-red { color: var(--red); }
+        .c-blue { color: var(--accent-light); }
+        .c-orange { color: var(--orange); }
+
+        /* ─── Symbol Cards ─── */
+        .symbols { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 12px; margin-bottom: 20px; }
+        .sym-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 16px;
+            transition: all 0.2s;
+        }
+        .sym-card:hover { border-color: var(--accent); box-shadow: 0 0 12px var(--accent-glow); }
+        .sym-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+        .sym-name { font-size: 16px; font-weight: 700; }
+        .sym-price { font-size: 18px; font-weight: 600; font-family: 'SF Mono', monospace; }
+        .sym-indicators { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 12px; }
+        .ind { background: var(--bg-primary); border-radius: 6px; padding: 6px; text-align: center; }
+        .ind-label { font-size: 9px; color: var(--text-muted); text-transform: uppercase; }
+        .ind-val { font-size: 12px; font-weight: 600; margin-top: 1px; }
+        .sym-decision { padding: 10px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; }
+        .sym-decision.buy { background: var(--green-bg); border: 1px solid rgba(63,185,80,0.2); }
+        .sym-decision.sell { background: var(--red-bg); border: 1px solid rgba(248,81,73,0.2); }
+        .sym-decision.hold { background: var(--bg-primary); border: 1px solid var(--border); }
+        .dec-action { font-weight: 700; font-size: 14px; }
+        .dec-conf { font-size: 11px; color: var(--text-secondary); }
+        .sym-reason { font-size: 11px; color: var(--text-secondary); margin-top: 8px; line-height: 1.4; }
+
+        /* ─── Two-Col Layout ─── */
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+        @media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } }
+
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        .card-hdr {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 13px;
+            font-weight: 600;
+        }
+        .card-hdr span { font-size: 11px; color: var(--text-muted); font-weight: 400; }
+        .card-full { grid-column: 1 / -1; }
+
+        /* ─── Timeline ─── */
+        .timeline { max-height: 380px; overflow-y: auto; padding: 8px 0; }
+        .tl-item { display: flex; gap: 10px; padding: 8px 16px; border-bottom: 1px solid rgba(30,58,95,0.3); transition: background 0.15s; }
+        .tl-item:hover { background: var(--accent-glow); }
+        .tl-item:last-child { border-bottom: none; }
+        .tl-time { font-size: 11px; color: var(--text-muted); min-width: 55px; font-family: monospace; padding-top: 2px; }
+        .tl-body { flex: 1; }
+        .tl-sym { font-weight: 600; font-size: 12px; }
+        .tl-detail { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
+
+        /* ─── Table ─── */
+        table { width: 100%; border-collapse: collapse; }
+        th { text-align: left; padding: 10px 14px; font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; background: var(--bg-secondary); border-bottom: 1px solid var(--border); }
+        td { padding: 10px 14px; font-size: 12px; border-bottom: 1px solid var(--border); }
+        tr:last-child td { border-bottom: none; }
+        tr:hover { background: var(--accent-glow); }
+
+        .tag { display: inline-block; padding: 2px 7px; border-radius: 10px; font-size: 10px; font-weight: 600; }
+        .tag-buy { background: var(--green-bg); color: var(--green); }
+        .tag-sell { background: var(--red-bg); color: var(--red); }
+        .tag-hold { background: var(--bg-primary); color: var(--text-muted); }
+
+        .conf-bar { display: inline-block; width: 50px; height: 4px; background: var(--bg-primary); border-radius: 2px; overflow: hidden; vertical-align: middle; margin-left: 5px; }
+        .conf-fill { height: 100%; border-radius: 2px; }
+
+        /* ─── AI Learning Card ─── */
+        .ai-learning { padding: 16px; max-height: 300px; overflow-y: auto; }
+        .ai-lesson { font-size: 12px; color: var(--text-secondary); line-height: 1.6; padding: 4px 0; border-bottom: 1px solid rgba(30,58,95,0.2); }
+
+        /* ─── Trade Journal ─── */
+        .journal-entry { border: 1px solid var(--border); border-radius: 8px; margin: 8px 16px; padding: 14px; background: var(--bg-secondary); }
+        .journal-entry:hover { border-color: var(--accent); }
+        .journal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+        .journal-id { font-size: 10px; color: var(--text-muted); font-family: monospace; }
+        .journal-strategy { font-size: 11px; color: var(--purple); font-weight: 600; }
+        .journal-signals { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; }
+        .signal-tag { font-size: 9px; padding: 2px 6px; border-radius: 4px; background: var(--accent-glow); color: var(--accent-light); font-weight: 600; }
+        .journal-risk { font-size: 11px; color: var(--text-secondary); margin: 4px 0; }
+        .journal-thinking { font-size: 11px; color: var(--text-muted); background: var(--bg-primary); border-radius: 6px; padding: 8px; margin-top: 6px; max-height: 100px; overflow-y: auto; white-space: pre-wrap; font-family: monospace; }
+        .journal-comments { margin-top: 8px; }
+        .journal-comment { font-size: 11px; color: var(--text-secondary); padding: 4px 0; border-top: 1px dashed var(--border); }
+        .comment-input { display: flex; gap: 6px; margin-top: 6px; }
+        .comment-input input { flex: 1; padding: 4px 8px; font-size: 11px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-primary); color: var(--text-primary); }
+        .comment-input button { padding: 4px 10px; font-size: 11px; background: var(--accent); color: white; border: none; border-radius: 4px; cursor: pointer; }
+
+        /* ─── Lot Override ─── */
+        .lot-controls { padding: 16px; }
+        .lot-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid rgba(30,58,95,0.2); }
+        .lot-row label { font-size: 12px; font-weight: 600; min-width: 80px; }
+        .lot-row input { width: 80px; padding: 4px 6px; font-size: 11px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-primary); color: var(--text-primary); text-align: center; }
+        .lot-row .lot-info { font-size: 10px; color: var(--text-muted); }
+        .lot-row button { padding: 3px 8px; font-size: 10px; background: var(--accent); color: white; border: none; border-radius: 4px; cursor: pointer; }
+        .lot-row button.lot-clear { background: var(--red); }
+
+        /* ─── Empty State ─── */
+        .empty { text-align: center; padding: 32px 16px; color: var(--text-muted); font-size: 13px; }
+
+        /* ─── Scrollbar ─── */
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <div class="header-left">
+        <img src="/static/ReyCapital_Logo_White.png" alt="Rey Capital" id="headerLogo">
+        <h1>AI Bot Dashboard</h1>
+    </div>
+    <div class="header-right">
+        <span class="badge badge-paper" id="modeBadge">PAPER</span>
+        <span class="badge badge-running" id="statusBadge">RUNNING</span>
+        <button class="btn" onclick="toggleTheme()" id="themeBtn" title="Toggle theme">☀️</button>
+        <button class="btn" onclick="refreshAll()"><span id="refIcon">↻</span> Refresh</button>
+        <span class="update-time" id="updateTime">—</span>
+    </div>
+</div>
+
+<div class="container">
+
+    <!-- Stats -->
+    <div class="stats">
+        <div class="stat">
+            <div class="stat-label">Balance</div>
+            <div class="stat-value c-blue" id="sBalance">—</div>
+            <div class="stat-sub" id="sBalanceSub">—</div>
+        </div>
+        <div class="stat">
+            <div class="stat-label">Daily P&L</div>
+            <div class="stat-value" id="sPnl">0.00%</div>
+            <div class="stat-sub" id="sPnlSub">—</div>
+        </div>
+        <div class="stat">
+            <div class="stat-label">Open Trades</div>
+            <div class="stat-value c-blue" id="sOpen">0</div>
+            <div class="stat-sub" id="sOpenSub">of 5 max</div>
+        </div>
+        <div class="stat">
+            <div class="stat-label">Total Decisions</div>
+            <div class="stat-value c-blue" id="sDecisions">0</div>
+            <div class="stat-sub" id="sDecSub">—</div>
+        </div>
+        <div class="stat">
+            <div class="stat-label">Trades Taken</div>
+            <div class="stat-value c-blue" id="sTrades">0</div>
+            <div class="stat-sub" id="sTradesSub">—</div>
+        </div>
+        <div class="stat">
+            <div class="stat-label">Confidence</div>
+            <div class="stat-value c-blue" id="sConf">0.60</div>
+            <div class="stat-sub">threshold</div>
+        </div>
+    </div>
+
+    <!-- Symbol Cards -->
+    <div class="symbols" id="symbolsGrid"></div>
+
+    <!-- Decisions + Trades -->
+    <div class="grid-2">
+        <div class="card">
+            <div class="card-hdr">Gemma Decisions <span id="decCount">0</span></div>
+            <div class="timeline" id="decTimeline">
+                <div class="empty">Waiting for Gemma decisions...</div>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-hdr">Trade Log <span id="tradeCount">0 trades</span></div>
+            <div id="tradeLog">
+                <div class="empty">No trades yet. Gemma is analyzing markets...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- AI Learning + Lot Size Controls -->
+    <div class="grid-2">
+        <div class="card">
+            <div class="card-hdr">AI Learning & Adaptation <span id="learnStatus">—</span></div>
+            <div class="ai-learning" id="aiLearning">
+                <div class="empty">AI will start learning after first trades complete.</div>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-hdr">Lot Size Controls <span style="font-size:10px;color:var(--text-muted)">Override auto-calculation</span></div>
+            <div class="lot-controls" id="lotControls">
+                <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">Set manual lot size per symbol. Leave blank or 0 to use auto-calculation (1% risk).</div>
+                <div id="lotRows"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Trade Journal -->
+    <div class="card card-full" style="margin-bottom:20px">
+        <div class="card-hdr">Trade Journal <span id="journalCount">0 entries</span></div>
+        <div style="max-height:600px;overflow-y:auto;padding:8px 0;" id="journalList">
+            <div class="empty">Trade journal entries will appear here with full Gemma thinking, strategy analysis, and risk details.</div>
+        </div>
+    </div>
+
+    <!-- Decision History + Gemma Debug -->
+    <div class="grid-2">
+        <div class="card">
+            <div class="card-hdr">Decision History <span id="histCount">—</span></div>
+            <div style="overflow-x:auto; max-height:340px; overflow-y:auto;">
+                <table>
+                    <thead><tr><th>Time</th><th>Symbol</th><th>Price</th><th>Action</th><th>Conf</th><th>Reason</th></tr></thead>
+                    <tbody id="histTable"></tbody>
+                </table>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-hdr">Gemma 4 Debug Log <span id="debugCount">—</span></div>
+            <div style="max-height:340px;overflow-y:auto;padding:8px;" id="gemmaDebug">
+                <div class="empty">Gemma's raw thinking/reasoning will appear here.</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const API = window.location.origin;
+let socket;
+
+// ─── Theme ───
+function initTheme() {
+    const t = localStorage.getItem('rcTheme') || 'dark';
+    applyTheme(t);
+}
+function toggleTheme() {
+    const t = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    applyTheme(t);
+    localStorage.setItem('rcTheme', t);
+}
+function applyTheme(t) {
+    document.documentElement.setAttribute('data-theme', t);
+    document.getElementById('themeBtn').textContent = t === 'dark' ? '☀️' : '🌙';
+    document.getElementById('headerLogo').src = t === 'dark'
+        ? '/static/ReyCapital_Logo_White.png'
+        : '/static/ReyCapital_Logo.png';
+}
+
+// ─── Fetch ───
+async function fetchJ(url) {
+    try { const r = await fetch(url); return await r.json(); } catch(e) { return null; }
+}
+
+async function refreshAll() {
+    await Promise.all([loadHealth(), loadDecisions(), loadTrades(), loadLearning(), loadJournal(), loadLotOverrides(), loadGemmaDebug()]);
+    document.getElementById('updateTime').textContent = new Date().toLocaleTimeString();
+}
+
+// ─── Health ───
+async function loadHealth() {
+    const d = await fetchJ(`${API}/api/health`);
+    if (!d) return;
+    const mode = d.mode || 'paper';
+    const mb = document.getElementById('modeBadge');
+    mb.textContent = mode.toUpperCase();
+    mb.className = `badge badge-${mode === 'live' ? 'live' : 'paper'}`;
+    document.getElementById('sBalance').textContent = `$${Number(d.balance||100000).toLocaleString()}`;
+    document.getElementById('sBalanceSub').textContent = mode === 'live' ? 'MT5 Demo' : 'Paper';
+    document.getElementById('sOpen').textContent = d.open_trades ?? 0;
+    document.getElementById('sConf').textContent = (d.confidence_threshold || 0.60).toFixed(2);
+
+    const pnl = d.daily_pnl || 0;
+    const pe = document.getElementById('sPnl');
+    pe.textContent = `${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}%`;
+    pe.className = `stat-value ${pnl > 0 ? 'c-green' : pnl < 0 ? 'c-red' : 'c-blue'}`;
+}
+
+// ─── Decisions ───
+async function loadDecisions() {
+    const d = await fetchJ(`${API}/api/decisions`);
+    if (!d || !d.decisions) return;
+    const decs = d.decisions.slice().reverse();
+
+    document.getElementById('sDecisions').textContent = decs.length;
+    document.getElementById('decCount').textContent = decs.length;
+
+    const counts = {BUY:0, SELL:0, HOLD:0};
+    decs.forEach(x => { counts[x.decision?.action||'HOLD']++; });
+    document.getElementById('sDecSub').textContent = `${counts.BUY}B · ${counts.SELL}S · ${counts.HOLD}H`;
+
+    updateSymbols(decs);
+    updateTimeline(decs);
+    updateHistTable(decs);
+}
+
+function updateSymbols(decs) {
+    const latest = {};
+    decs.forEach(d => { if (!latest[d.symbol]) latest[d.symbol] = d; });
+
+    document.getElementById('symbolsGrid').innerHTML = Object.entries(latest).map(([sym, d]) => {
+        const dec = d.decision||{};
+        const a = dec.action||'HOLD';
+        const ac = a==='BUY'?'buy':a==='SELL'?'sell':'hold';
+        const color = a==='BUY'?'var(--green)':a==='SELL'?'var(--red)':'var(--text-muted)';
+        const price = typeof d.close==='number'? d.close.toLocaleString(undefined,{minimumFractionDigits:2}):'—';
+
+        return `<div class="sym-card">
+            <div class="sym-top">
+                <span class="sym-name">${sym}</span>
+                <span class="sym-price">${price}</span>
+            </div>
+            <div class="sym-decision ${ac}">
+                <div>
+                    <div class="dec-action" style="color:${color}">${a}</div>
+                    <div class="dec-conf">${(dec.confidence*100).toFixed(0)}% confidence</div>
+                </div>
+                <div style="text-align:right;font-size:11px;color:var(--text-muted)">
+                    SL: ${dec.sl_distance_atr||'—'} ATR<br>TP: ${dec.tp_distance_atr||'—'} ATR
+                </div>
+            </div>
+            <div class="sym-reason">${dec.reason||'—'}</div>
+        </div>`;
+    }).join('');
+}
+
+function updateTimeline(decs) {
+    const el = document.getElementById('decTimeline');
+    if (!decs.length) return;
+    el.innerHTML = decs.slice(0,40).map(d => {
+        const dec = d.decision||{};
+        const a = dec.action||'?';
+        const cls = a==='BUY'?'c-green':a==='SELL'?'c-red':'';
+        const t = new Date(d.timestamp).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+        return `<div class="tl-item">
+            <div class="tl-time">${t}</div>
+            <div class="tl-body">
+                <div class="tl-sym">${d.symbol} <span class="${cls}">${a}</span> <span style="color:var(--text-muted)">${(dec.confidence*100).toFixed(0)}%</span></div>
+                <div class="tl-detail">${dec.reason||'—'}</div>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function updateHistTable(decs) {
+    document.getElementById('histCount').textContent = `${decs.length} total`;
+    document.getElementById('histTable').innerHTML = decs.slice(0,60).map(d => {
+        const dec = d.decision||{};
+        const a = dec.action||'?';
+        const tc = a==='BUY'?'tag-buy':a==='SELL'?'tag-sell':'tag-hold';
+        const conf = dec.confidence||0;
+        const cp = (conf*100).toFixed(0);
+        const bc = conf>0.7?'var(--green)':conf>0.4?'var(--orange)':'var(--red)';
+        const t = new Date(d.timestamp).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+        const p = typeof d.close==='number'?d.close.toLocaleString(undefined,{minimumFractionDigits:2}):d.close;
+        return `<tr>
+            <td>${t}</td><td><b>${d.symbol}</b></td><td>${p}</td>
+            <td><span class="tag ${tc}">${a}</span></td>
+            <td>${cp}% <div class="conf-bar"><div class="conf-fill" style="width:${cp}%;background:${bc}"></div></div></td>
+            <td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${dec.reason||'—'}</td>
+        </tr>`;
+    }).join('');
+}
+
+// ─── Trades ───
+async function loadTrades() {
+    const d = await fetchJ(`${API}/api/trades`);
+    if (!d) return;
+    const trades = d.trades || [];
+    document.getElementById('sTrades').textContent = trades.length;
+    document.getElementById('tradeCount').textContent = `${trades.length} trades`;
+
+    const el = document.getElementById('tradeLog');
+    if (!trades.length) return;
+
+    document.getElementById('sTradesSub').textContent = `${trades.length} executed`;
+
+    el.innerHTML = `<div style="overflow-x:auto;max-height:340px;overflow-y:auto;"><table>
+        <thead><tr><th>Time</th><th>Symbol</th><th>Action</th><th>Qty</th><th>Entry</th><th>SL</th><th>TP</th><th>Conf</th></tr></thead>
+        <tbody>${trades.slice().reverse().map(t => {
+            const tc = t.action==='BUY'?'tag-buy':'tag-sell';
+            const time = new Date(t.timestamp).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+            return `<tr>
+                <td>${time}</td><td><b>${t.symbol}</b></td>
+                <td><span class="tag ${tc}">${t.action}</span></td>
+                <td>${t.qty}</td><td>${t.entry_price?.toLocaleString()}</td>
+                <td style="color:var(--red)">${t.sl?.toLocaleString()}</td>
+                <td style="color:var(--green)">${t.tp?.toLocaleString()}</td>
+                <td>${(t.confidence*100).toFixed(0)}%</td>
+            </tr>`;
+        }).join('')}</tbody></table></div>`;
+}
+
+// ─── AI Learning ───
+async function loadLearning() {
+    const d = await fetchJ(`${API}/api/learning`);
+    if (!d) return;
+    const el = document.getElementById('aiLearning');
+
+    if (d.adaptive_context) {
+        const lines = d.adaptive_context.split('\n').filter(l => l.trim());
+        el.innerHTML = lines.map(l => `<div class="ai-lesson">${l}</div>`).join('');
+        document.getElementById('learnStatus').textContent = `${d.total_outcomes||0} outcomes analyzed`;
+    }
+
+    if (d.adjustments && d.adjustments.length > 0) {
+        const adj = d.adjustments.slice(-3);
+        el.innerHTML += adj.map(a =>
+            `<div class="ai-lesson" style="color:var(--orange)">⚙️ ${a.description || JSON.stringify(a)}</div>`
+        ).join('');
+    }
+}
+
+// ─── Trade Journal ───
+async function loadJournal() {
+    const d = await fetchJ(`${API}/api/journal`);
+    if (!d) return;
+    const entries = (d.entries || []).slice().reverse();
+    document.getElementById('journalCount').textContent = `${entries.length} entries`;
+    const el = document.getElementById('journalList');
+    if (!entries.length) return;
+
+    el.innerHTML = entries.map(e => {
+        const strat = e.strategy_signals || {};
+        const signals = (strat.signals || []).map(s => `<span class="signal-tag">${s}</span>`).join('');
+        const reasons = (strat.reasons || []).map(r => `<div style="font-size:10px;color:var(--text-secondary)">- ${r}</div>`).join('');
+        const risk = e.risk_calculation || {};
+        const ac = e.action === 'BUY' ? 'c-green' : 'c-red';
+        const statusColor = e.status === 'FILLED' ? 'var(--green)' : 'var(--red)';
+        const time = new Date(e.timestamp).toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'});
+        const thinking = (e.gemma_raw_thinking || '').substring(0, 500);
+        const comments = (e.comments || []).map(c =>
+            `<div class="journal-comment"><b>${new Date(c.timestamp).toLocaleTimeString()}</b>: ${c.text}</div>`
+        ).join('');
+
+        return `<div class="journal-entry">
+            <div class="journal-header">
+                <div>
+                    <span class="${ac}" style="font-weight:700;font-size:14px">${e.action} ${e.symbol}</span>
+                    <span style="font-size:12px;color:var(--text-secondary);margin-left:8px">${e.lot_size} lots @ ${e.entry_price?.toLocaleString()}</span>
+                    <span style="font-size:11px;color:${statusColor};margin-left:8px;font-weight:600">${e.status || 'FILLED'}</span>
+                    ${e.lot_override ? '<span class="signal-tag" style="background:var(--orange-bg);color:var(--orange)">LOT OVERRIDE</span>' : ''}
+                </div>
+                <div>
+                    <span class="journal-id">${e.trade_id}</span>
+                    <span style="font-size:11px;color:var(--text-muted);margin-left:8px">${time}</span>
+                </div>
+            </div>
+            <div class="journal-strategy">${strat.core_strategy || 'Multi-Indicator'} (${strat.signal_count || 0} signals, ${((strat.confluence_score || 0) * 100).toFixed(0)}% confluence)</div>
+            <div class="journal-signals">${signals || '<span style="font-size:10px;color:var(--text-muted)">No classified signals</span>'}</div>
+            ${reasons ? `<div style="margin:4px 0">${reasons}</div>` : ''}
+            <div class="journal-risk">
+                Risk: ${risk.risk_pct || '?'}% of $${(risk.balance || 0).toLocaleString()} = $${(risk.risk_amount || 0).toFixed(2)} |
+                ATR: ${(risk.atr || 0).toFixed(5)} | SL: ${risk.sl_atr_mult || '?'}x ATR | TP: ${risk.tp_atr_mult || '?'}x ATR |
+                SL Price: ${e.sl?.toLocaleString()} | TP Price: ${e.tp?.toLocaleString()}
+            </div>
+            <div style="font-size:11px;color:var(--text-secondary);margin:4px 0">Gemma: "${e.gemma_decision?.reason || '—'}" (${((e.gemma_decision?.confidence || 0) * 100).toFixed(0)}% confidence)</div>
+            ${thinking ? `<details><summary style="font-size:10px;color:var(--accent);cursor:pointer">Show Gemma Raw Thinking</summary><div class="journal-thinking">${thinking}${thinking.length >= 500 ? '...' : ''}</div></details>` : ''}
+            ${e.error ? `<div style="font-size:11px;color:var(--red);margin-top:4px">Error: ${e.error}</div>` : ''}
+            <div class="journal-comments">
+                ${comments}
+                <div class="comment-input">
+                    <input type="text" placeholder="Add comment..." id="comment-${e.trade_id}" onkeypress="if(event.key==='Enter')addComment('${e.trade_id}')">
+                    <button onclick="addComment('${e.trade_id}')">Add</button>
+                </div>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+async function addComment(tradeId) {
+    const input = document.getElementById(`comment-${tradeId}`);
+    if (!input || !input.value.trim()) return;
+    await fetch(`${API}/api/journal/comment`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ trade_id: tradeId, comment: input.value.trim() })
+    });
+    input.value = '';
+    loadJournal();
+}
+
+// ─── Lot Size Controls ───
+async function loadLotOverrides() {
+    const d = await fetchJ(`${API}/api/health`);
+    if (!d) return;
+    const symbols = d.symbols || [];
+    const od = await fetchJ(`${API}/api/lot_overrides`);
+    const overrides = od?.overrides || {};
+
+    document.getElementById('lotRows').innerHTML = symbols.map(sym => {
+        const ov = overrides[sym] || '';
+        return `<div class="lot-row">
+            <label>${sym}</label>
+            <input type="number" step="0.001" min="0" placeholder="Auto" value="${ov}" id="lot-${sym}">
+            <button onclick="setLotOverride('${sym}')">Set</button>
+            <button class="lot-clear" onclick="clearLotOverride('${sym}')">Clear</button>
+            <span class="lot-info">${ov ? `Override: ${ov} lots` : '1% risk auto-calc'}</span>
+        </div>`;
+    }).join('');
+}
+
+async function setLotOverride(symbol) {
+    const input = document.getElementById(`lot-${symbol}`);
+    const val = parseFloat(input.value) || 0;
+    await fetch(`${API}/api/lot_override`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ symbol: symbol, lot_size: val })
+    });
+    loadLotOverrides();
+}
+
+async function clearLotOverride(symbol) {
+    await fetch(`${API}/api/lot_override`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ symbol: symbol, lot_size: null })
+    });
+    document.getElementById(`lot-${symbol}`).value = '';
+    loadLotOverrides();
+}
+
+// ─── Gemma Debug Log ───
+async function loadGemmaDebug() {
+    const d = await fetchJ(`${API}/api/gemma_thinking`);
+    if (!d) return;
+    const decs = (d.decisions || []).slice().reverse().slice(0, 15);
+    document.getElementById('debugCount').textContent = `${d.total || 0} total`;
+    const el = document.getElementById('gemmaDebug');
+    if (!decs.length) return;
+
+    el.innerHTML = decs.map(d => {
+        const dec = d.decision || {};
+        const raw = d.raw_gemma_response || '';
+        const indicators = d.indicators_summary || {};
+        const ac = dec.action === 'BUY' ? 'c-green' : dec.action === 'SELL' ? 'c-red' : '';
+        const t = new Date(d.timestamp).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+
+        const indList = Object.entries(indicators)
+            .filter(([k,v]) => v !== null && v !== undefined && v !== '')
+            .map(([k,v]) => `<span style="font-size:9px;color:var(--text-muted)">${k}=${typeof v==='number'?v.toFixed(2):v}</span>`)
+            .join(' | ');
+
+        return `<div style="border-bottom:1px solid var(--border);padding:6px 0;">
+            <div style="display:flex;justify-content:space-between">
+                <span style="font-size:12px;font-weight:600">${d.symbol} <span class="${ac}">${dec.action}</span> ${((dec.confidence||0)*100).toFixed(0)}%</span>
+                <span style="font-size:10px;color:var(--text-muted)">${t}</span>
+            </div>
+            <div style="font-size:11px;color:var(--text-secondary);margin:2px 0">${dec.reason || '—'}</div>
+            ${indList ? `<div style="margin:3px 0;line-height:1.6">${indList}</div>` : ''}
+            ${raw ? `<details><summary style="font-size:10px;color:var(--accent);cursor:pointer">Raw Gemma Output</summary><div style="font-size:10px;font-family:monospace;background:var(--bg-primary);padding:6px;border-radius:4px;max-height:80px;overflow-y:auto;white-space:pre-wrap;margin-top:3px">${raw.substring(0,400)}${raw.length>400?'...':''}</div></details>` : ''}
+        </div>`;
+    }).join('');
+}
+
+// ─── WebSocket ───
+function initSocket() {
+    try {
+        socket = io();
+        socket.on('new_decision', d => { refreshAll(); });
+        socket.on('new_trade', d => { refreshAll(); });
+        socket.on('stats_update', d => {
+            if (d.balance) document.getElementById('sBalance').textContent = `$${Number(d.balance).toLocaleString()}`;
+            if (d.open_trades !== undefined) document.getElementById('sOpen').textContent = d.open_trades;
+        });
+    } catch(e) { console.log('WebSocket not available, using polling'); }
+}
+
+// ─── Init ───
+initTheme();
+refreshAll();
+initSocket();
+setInterval(refreshAll, 30000);
+</script>
+</body>
+</html>

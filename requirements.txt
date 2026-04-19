@@ -1,0 +1,13 @@
+flask>=3.0
+flask-socketio>=5.3
+pyyaml>=6.0
+requests>=2.31
+pandas>=2.0
+pandas_ta>=0.3
+numpy>=1.24
+schedule>=1.2
+eventlet>=0.35
+
+# Broker-specific (install as needed)
+# MetaTrader5>=5.0.45   # for MT5 trading (Windows only)
+# ccxt>=4.0             # for Binance/crypto trading

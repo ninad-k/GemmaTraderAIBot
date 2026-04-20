@@ -250,8 +250,11 @@
     <div class="header-right">
         <span class="badge badge-paper" id="modeBadge">PAPER</span>
         <span class="badge badge-running" id="statusBadge">RUNNING</span>
-        <a class="btn" href="/settings" title="Settings — MT5 account, symbols, lot sizes, alerts"
-           style="text-decoration:none;display:inline-flex;align-items:center;gap:6px;">
+        <a class="btn btn-settings" href="/settings"
+           title="Open Settings — MT5 account, symbols, lot sizes, mode switch, alerts"
+           style="text-decoration:none;display:inline-flex;align-items:center;gap:6px;
+                  background:#0052CC;color:#fff;border:1px solid #0052CC;
+                  padding:8px 14px;border-radius:6px;font-weight:600;">
            ⚙ Settings
         </a>
         <button class="btn" onclick="toggleTheme()" id="themeBtn" title="Toggle theme">☀️</button>
@@ -261,6 +264,21 @@
 </div>
 
 <div class="container">
+
+    <!-- Setup banner (auto-shown if MT5 not configured) -->
+    <div id="setupBanner" style="display:none;background:rgba(210,153,34,0.12);
+         border:1px solid var(--orange,#d29922);border-radius:8px;padding:14px 18px;
+         margin-bottom:16px;display:none;align-items:center;justify-content:space-between;gap:12px;">
+        <div>
+            <strong style="color:var(--orange,#d29922);">⚠ Setup incomplete.</strong>
+            <span style="color:var(--muted);">Configure your MT5 account, select symbols, and set lot sizes before going live.</span>
+        </div>
+        <a href="/settings"
+           style="text-decoration:none;background:#0052CC;color:#fff;padding:8px 16px;
+                  border-radius:6px;font-weight:600;white-space:nowrap;">
+           Open Settings →
+        </a>
+    </div>
 
     <!-- Stats -->
     <div class="stats">
@@ -401,7 +419,7 @@ async function loadHealth() {
     mb.textContent = mode.toUpperCase();
     mb.className = `badge badge-${mode === 'live' ? 'live' : 'paper'}`;
     document.getElementById('sBalance').textContent = `$${Number(d.balance||100000).toLocaleString()}`;
-    document.getElementById('sBalanceSub').textContent = mode === 'live' ? 'MT5 Demo' : 'Paper';
+    document.getElementById('sBalanceSub').textContent = mode === 'live' ? `MT5 ${d.currency || 'USD'}` : 'Paper';
     document.getElementById('sOpen').textContent = d.open_trades ?? 0;
     document.getElementById('sConf').textContent = (d.confidence_threshold || 0.60).toFixed(2);
 
@@ -409,6 +427,19 @@ async function loadHealth() {
     const pe = document.getElementById('sPnl');
     pe.textContent = `${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}%`;
     pe.className = `stat-value ${pnl > 0 ? 'c-green' : pnl < 0 ? 'c-red' : 'c-blue'}`;
+
+    // Show setup banner if MT5 not configured
+    try {
+        const modeResp = await fetch(`${API}/api/settings/mode`);
+        const m = await modeResp.json();
+        const banner = document.getElementById('setupBanner');
+        if (banner) {
+            // Show in paper mode if MT5 not configured (user needs to set it up)
+            // Hide once MT5 is configured OR if user is in live mode
+            const needSetup = (mode === 'paper') && !m.mt5_configured;
+            banner.style.display = needSetup ? 'flex' : 'none';
+        }
+    } catch (e) { /* ignore */ }
 }
 
 // ─── Decisions ───

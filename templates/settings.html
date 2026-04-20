@@ -74,6 +74,32 @@
     <a href="/">← Dashboard</a>
 </header>
 <main>
+    <!-- ─── Trading Mode Switch ─── -->
+    <div class="card" id="mode-card" style="border-left:3px solid var(--accent);">
+        <h2>Trading Mode</h2>
+        <div class="row">
+            <span class="pill">
+                <span class="k">current:</span>
+                <span id="mode-current" style="color:var(--orange);font-weight:600;">–</span>
+            </span>
+            <span id="mode-mt5-status" class="pill" style="display:none;">
+                <span class="k">mt5:</span>
+                <span id="mode-mt5-text" style="color:var(--muted);">not configured</span>
+            </span>
+        </div>
+        <div class="row" style="margin-top:12px;">
+            <button id="mode-paper-btn" class="ghost" onclick="switchMode('paper')">Switch to Paper</button>
+            <button id="mode-live-btn" onclick="switchMode('live')"
+                    style="background:var(--red);border-color:var(--red);">⚠ Switch to Live</button>
+            <span id="mode-msg" style="color:var(--muted);font-size:12px;"></span>
+        </div>
+        <p style="color:var(--muted);font-size:12px;margin-top:12px;">
+            Paper mode simulates trades against a virtual $100,000 balance — no real money at risk.
+            Live mode routes orders to your MT5 account (requires connection below).
+            <strong style="color:var(--orange);">Restart the bot after switching modes.</strong>
+        </p>
+    </div>
+
     <!-- ─── MT5 Account Connection ─── -->
     <div class="card" id="mt5-card">
         <h2>MT5 Account Connection</h2>
@@ -547,6 +573,72 @@ async function runBacktest() {
     document.getElementById("bt-out").textContent = JSON.stringify(d, null, 2);
 }
 
+// ─── Trading Mode ───
+async function loadMode() {
+    try {
+        const r = await fetch("/api/settings/mode");
+        const d = await r.json();
+        const cur = document.getElementById("mode-current");
+        cur.textContent = (d.mode || "–").toUpperCase();
+        cur.style.color = d.mode === "live" ? "var(--red)" : "var(--orange)";
+
+        const mt5Status = document.getElementById("mode-mt5-status");
+        const mt5Text = document.getElementById("mode-mt5-text");
+        if (d.mt5_configured) {
+            mt5Status.style.display = "";
+            mt5Text.textContent = "configured";
+            mt5Text.style.color = "var(--green)";
+        } else {
+            mt5Status.style.display = "";
+            mt5Text.textContent = "not configured";
+            mt5Text.style.color = "var(--muted)";
+        }
+
+        // Disable the non-current mode button
+        document.getElementById("mode-paper-btn").disabled = (d.mode === "paper");
+        const liveBtn = document.getElementById("mode-live-btn");
+        liveBtn.disabled = (d.mode === "live") || !d.can_go_live;
+        if (!d.can_go_live && d.mode !== "live") {
+            liveBtn.title = "Configure MT5 account first";
+        }
+    } catch (e) { console.warn("loadMode error:", e); }
+}
+
+async function switchMode(newMode) {
+    const msg = document.getElementById("mode-msg");
+    if (newMode === "live" && !confirm(
+        "⚠ LIVE TRADING WARNING ⚠\n\n" +
+        "This will route real orders to your MT5 account using real money.\n\n" +
+        "Before continuing, verify:\n" +
+        "• You've run 14+ days of paper with profit_factor > 1.0\n" +
+        "• Your MT5 account is a dedicated demo or a small live balance\n" +
+        "• Kill-switch and drawdown breaker are tested\n\n" +
+        "Continue?"
+    )) return;
+
+    msg.textContent = "updating…";
+    msg.style.color = "var(--muted)";
+    try {
+        const r = await fetch("/api/settings/mode", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({mode: newMode}),
+        });
+        const d = await r.json();
+        if (d.ok) {
+            msg.textContent = `✓ ${d.message}`;
+            msg.style.color = "var(--green)";
+            loadMode();
+        } else {
+            msg.textContent = `✗ ${d.error}`;
+            msg.style.color = "var(--red)";
+        }
+    } catch (e) {
+        msg.textContent = `✗ ${e}`;
+        msg.style.color = "var(--red)";
+    }
+}
+
 // ─── MT5 Account ───
 let MT5_SYMBOLS_CACHE = [];
 
@@ -764,8 +856,10 @@ loadSafety();
 loadNotifs();
 loadNews();
 loadMetrics();
+loadMode();
 loadMT5Account();
 setInterval(loadSafety, 5000);
+setInterval(loadMode, 30000);
 </script>
 </body>
 </html>

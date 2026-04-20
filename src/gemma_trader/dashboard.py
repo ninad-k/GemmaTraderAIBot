@@ -93,31 +93,103 @@ def favicon():
 
 # ─── API Endpoints ───
 
+PAPER_STARTING_BALANCE = 100_000
+
+
+def _compute_paper_balance(outcomes: list) -> tuple[float, float]:
+    """Compute paper-mode balance and today's P&L% from outcome log."""
+    start = PAPER_STARTING_BALANCE
+    total_profit = 0.0
+    today_profit = 0.0
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    for o in outcomes or []:
+        try:
+            profit = float(o.get("profit", 0) or 0)
+        except (TypeError, ValueError):
+            continue
+        total_profit += profit
+        close_time = str(o.get("close_time", "") or "")
+        if close_time.startswith(today_str):
+            today_profit += profit
+    balance = start + total_profit
+    pnl_pct = (today_profit / start * 100.0) if start else 0.0
+    return balance, pnl_pct
+
+
+def _get_mt5_balance_info() -> dict:
+    """Try the configured MT5 account first, then fall back to global mt5 import."""
+    try:
+        from gemma_trader.mt5_account import get_account
+        acct = get_account()
+        if acct.is_configured():
+            info = acct.get_info()
+            if info:
+                return {
+                    "balance": float(info["balance"]),
+                    "equity": float(info["equity"]),
+                    "currency": info.get("currency", "USD"),
+                    "source": "mt5_account",
+                }
+    except Exception as e:
+        logger.debug(f"mt5_account balance check failed: {e}")
+    try:
+        import MetaTrader5 as mt5
+        info = mt5.account_info()
+        if info is not None:
+            return {
+                "balance": float(info.balance),
+                "equity": float(info.equity),
+                "currency": getattr(info, "currency", "USD"),
+                "source": "mt5_global",
+            }
+    except Exception:
+        pass
+    return {}
+
+
 @app.route("/api/health")
 def api_health():
     config = load_config()
     trades = read_json_log(TRADES_LOG)
     decisions = read_json_log(DECISIONS_LOG)
+    outcomes = read_json_log(OUTCOMES_LOG)
 
-    # Try to get real balance from MT5
-    balance = 100000  # fallback
-    try:
-        import MetaTrader5 as mt5
-        info = mt5.account_info()
-        if info:
-            balance = info.balance
-    except Exception:
-        pass
+    mode = config.get("trading", {}).get("mode", "paper")
+
+    # Balance + daily P&L:
+    # - Paper mode: start = 100k, add realized P&L from outcomes
+    # - Live mode: use MT5 account_info if reachable, else fall back to paper math
+    if mode == "paper":
+        balance, daily_pnl = _compute_paper_balance(outcomes)
+        currency = "USD"
+        equity = balance
+    else:
+        mt5_info = _get_mt5_balance_info()
+        if mt5_info:
+            balance = mt5_info["balance"]
+            equity = mt5_info["equity"]
+            currency = mt5_info["currency"]
+            # daily P&L on live = realized deals today / starting balance
+            _, daily_pnl = _compute_paper_balance(outcomes)
+        else:
+            balance, daily_pnl = _compute_paper_balance(outcomes)
+            currency = "USD"
+            equity = balance
+
+    open_trades = len([t for t in trades if not t.get("closed")])
 
     return jsonify({
         "status": "running",
-        "mode": config.get("trading", {}).get("mode", "paper"),
+        "mode": mode,
         "model": config.get("ollama", {}).get("model", "gemma4"),
-        "balance": balance,
-        "open_trades": len([t for t in trades if not t.get("closed")]),
-        "daily_pnl": 0.0,
+        "balance": round(balance, 2),
+        "equity": round(equity, 2),
+        "currency": currency,
+        "open_trades": open_trades,
+        "daily_pnl": round(daily_pnl, 3),
         "total_decisions": len(decisions),
         "total_trades": len(trades),
+        "total_outcomes": len(outcomes),
         "symbols": config.get("trading", {}).get("allowed_symbols", []),
         "confidence_threshold": config.get("trading", {}).get("confidence_threshold", 0.60),
         "timestamp": datetime.now().isoformat(),
@@ -739,6 +811,74 @@ def api_settings_mt5_symbols_save():
         })
     except Exception as e:
         logger.warning(f"mt5 symbols save failed: {e}")
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+# ─── Trading mode switch (paper ↔ live) ───
+
+@app.route("/api/settings/mode", methods=["GET"])
+def api_settings_mode_get():
+    config = load_config()
+    mode = config.get("trading", {}).get("mode", "paper")
+    try:
+        from gemma_trader.mt5_account import get_account
+        mt5_ready = get_account().is_configured()
+    except Exception:
+        mt5_ready = False
+    return jsonify({
+        "mode": mode,
+        "mt5_configured": mt5_ready,
+        "can_go_live": mt5_ready,
+    })
+
+
+@app.route("/api/settings/mode", methods=["POST"])
+def api_settings_mode_post():
+    """
+    Switch trading mode by writing trading.mode in config.yaml.
+    For safety, requires MT5 to be configured before allowing live mode.
+    Bot must be restarted for the change to take effect.
+    """
+    data = request.get_json() or {}
+    new_mode = str(data.get("mode", "")).strip().lower()
+    if new_mode not in ("paper", "live"):
+        return jsonify({"ok": False, "error": "mode must be 'paper' or 'live'"}), 400
+
+    if new_mode == "live":
+        try:
+            from gemma_trader.mt5_account import get_account
+            acct = get_account()
+            if not acct.is_configured():
+                return jsonify({
+                    "ok": False,
+                    "error": "configure MT5 account first (Settings → MT5 Account Connection)",
+                }), 400
+            # Attempt connection to verify credentials
+            test = acct.test_connection()
+            if not test.get("ok"):
+                return jsonify({
+                    "ok": False,
+                    "error": f"MT5 connection failed: {test.get('error', 'unknown')}",
+                }), 400
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e)}), 500
+
+    try:
+        import yaml as _yaml
+        config_path = CONFIG_PATH
+        with open(config_path, encoding="utf-8") as f:
+            cfg = _yaml.safe_load(f)
+        cfg.setdefault("trading", {})["mode"] = new_mode
+        with open(config_path, "w", encoding="utf-8") as f:
+            _yaml.safe_dump(cfg, f, default_flow_style=False, sort_keys=False)
+        logger.warning(f"[MODE SWITCH] trading.mode -> {new_mode} (restart required)")
+        return jsonify({
+            "ok": True,
+            "mode": new_mode,
+            "restart_required": True,
+            "message": f"config.yaml updated to mode={new_mode}. Restart the bot for changes to take effect.",
+        })
+    except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
 

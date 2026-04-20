@@ -43,6 +43,8 @@ circuit breaker, and a backtester.
 
 ## Quickstart
 
+Python 3.12+ is required for the current `pandas-ta` dependency. Python 3.13 is the safest choice.
+
 ```bash
 pip install -r requirements.txt
 cp notifications.yaml.example notifications.yaml   # fill in your tokens

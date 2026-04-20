@@ -32,9 +32,10 @@ trading:
   allowed_symbols:
     - "BTCUSD"         # Bitcoin - highest liquidity
     - "ETHUSD"         # Ethereum - second largest
-    - "LTCUSD"         # Litecoin - fast mover
-    - "XRPUSD"         # Ripple - volatile
-    - "SOLUSD"         # Solana - trending
+    - "XAUUSD"         # Gold spot
+    - "XAGUSD"         # Silver spot
+    - "US100"          # Nasdaq 100 index
+    - "US30"           # Dow Jones index
 
 # --- Risk Management ---
 risk_management:

@@ -1,38 +1,44 @@
 active_broker: ic_markets
 symbols:
-  - generic: BTCUSD
-    enabled: true
-    active: true
-    aliases:
-      ic_markets: BTCUSD
-      cfi: BTCUSD_
-  - generic: ETHUSD
-    enabled: true
-    active: true
-    aliases:
-      ic_markets: ETHUSD
-      cfi: ETHUSD_
-  - generic: LTCUSD
-    enabled: true
-    active: true
-    aliases:
-      ic_markets: LTCUSD
-      cfi: LTCUSD_
-  - generic: XRPUSD
-    enabled: true
-    active: true
-    aliases:
-      ic_markets: XRPUSD
-      cfi: XRPUSD_
-  - generic: SOLUSD
-    enabled: true
-    active: true
-    aliases:
-      ic_markets: SOLUSD
-      cfi: SOLUSD_
-  - generic: GOLD
-    enabled: true
-    active: false
-    aliases:
-      ic_markets: XAUUSD
-      cfi: XAUUSD_
+- generic: BTCUSD
+  enabled: true
+  active: true
+  lot_size: 0.01
+  aliases:
+    ic_markets: BTCUSD
+    cfi: BTCUSD_
+- generic: ETHUSD
+  enabled: true
+  active: false
+  lot_size: 0.01
+  aliases:
+    ic_markets: ETHUSD
+    cfi: ETHUSD_
+- generic: XAUUSD
+  enabled: true
+  active: true
+  lot_size: 0.01
+  aliases:
+    ic_markets: XAUUSD
+    cfi: XAUUSD_
+- generic: XAGUSD
+  enabled: true
+  active: true
+  lot_size: 0.01
+  aliases:
+    ic_markets: XAGUSD
+    cfi: XAGUSD_
+- generic: US100
+  enabled: true
+  active: true
+  lot_size: 0.01
+  aliases:
+    ic_markets: US100
+    cfi: US100
+- generic: US30
+  enabled: true
+  active: true
+  lot_size: 0.01
+  aliases:
+    ic_markets: US30
+    cfi: US30

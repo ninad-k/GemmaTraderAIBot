@@ -221,7 +221,7 @@ if (-not (Test-Path "$venvDir\Scripts\python.exe")) {
 & "$venvDir\Scripts\python.exe" -m pip install --upgrade pip
 & "$venvDir\Scripts\pip.exe" install `
     flask flask-socketio pyyaml requests `
-    pandas pandas_ta numpy schedule eventlet `
+    pandas pandas-ta numpy schedule eventlet `
     MetaTrader5 tqdm scipy stockstats python-docx
 Write-OK "All dependencies installed"
 

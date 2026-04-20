@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Python 3.10+ (3.11 recommended, project tested on 3.13)
+- Python 3.12+ (3.13 recommended)
 - Windows 10/11 for live MT5 (the MetaTrader5 Python bindings are
   Windows-only). Paper mode + dashboard work fine on macOS/Linux.
 - [Ollama](https://ollama.com) running locally with a Gemma model pulled
@@ -21,6 +21,8 @@ source .venv/bin/activate
 
 pip install -r requirements.txt
 ```
+
+If you are using Python 3.14 and see pip reject `pandas-ta`, recreate the virtualenv with Python 3.13. The project depends on the beta `pandas-ta` releases currently published on PyPI.
 
 On macOS/Linux the `MetaTrader5` line in `requirements.txt` will fail —
 that is expected. Install everything else:

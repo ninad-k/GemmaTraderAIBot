@@ -66,7 +66,7 @@ python -m venv "$BOT_DIR\venv"
 
 # Install dependencies
 pip install --upgrade pip
-pip install flask flask-socketio pyyaml requests pandas pandas_ta numpy schedule eventlet MetaTrader5
+pip install flask flask-socketio pyyaml requests pandas pandas-ta numpy schedule eventlet MetaTrader5
 
 Write-Host "  Dependencies installed." -ForegroundColor Green
 Write-Host "  Copy your bot files to $BOT_DIR" -ForegroundColor Yellow

@@ -3,7 +3,9 @@ flask-socketio>=5.3
 pyyaml>=6.0
 requests>=2.31
 pandas>=2.0
-pandas_ta>=0.3
+# PyPI currently publishes beta-only releases for pandas-ta; pin a beta-capable range
+# so pip can resolve it on supported interpreters.
+pandas-ta>=0.4.67b0
 numpy>=1.24
 schedule>=1.2
 eventlet>=0.35

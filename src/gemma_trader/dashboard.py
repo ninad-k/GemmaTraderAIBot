@@ -703,6 +703,37 @@ def api_settings_mt5_test():
         return jsonify({"ok": False, "error": str(e)})
 
 
+@app.route("/api/settings/mt5/diagnostics", methods=["GET"])
+def api_settings_mt5_diagnostics():
+    """
+    Show environment diagnostics for the MT5 Python package.
+    Reveals which Python interpreter is running the bot and whether
+    MetaTrader5 is importable in that specific interpreter.
+    """
+    import sys
+    import platform
+    result = {
+        "python_executable": sys.executable,
+        "python_version": sys.version,
+        "platform": platform.platform(),
+        "is_windows": sys.platform.startswith("win"),
+        "mt5_installed": False,
+        "mt5_version": None,
+        "install_hint": None,
+    }
+    try:
+        import MetaTrader5 as _mt5
+        result["mt5_installed"] = True
+        result["mt5_version"] = getattr(_mt5, "__version__", "unknown")
+    except ImportError:
+        result["install_hint"] = (
+            f'{sys.executable} -m pip install MetaTrader5'
+        )
+    except Exception as e:
+        result["install_hint"] = f"Unexpected error: {e}"
+    return jsonify(result)
+
+
 @app.route("/api/settings/mt5/info", methods=["GET"])
 def api_settings_mt5_info():
     """Return live account info (balance, equity, leverage)."""

@@ -143,8 +143,13 @@
         <div class="row">
             <button onclick="testMT5Connection()">Test Connection</button>
             <button onclick="saveMT5Account()">Save &amp; Connect</button>
+            <button class="ghost" onclick="showMT5Diagnostics()">Diagnostics</button>
             <span id="mt5-msg" style="color:var(--muted);font-size:12px;"></span>
         </div>
+        <div id="mt5-diagnostics" style="display:none;margin-top:16px;padding:12px;
+             background:#0a0a0a;border:1px solid var(--border);border-radius:6px;
+             font-family:ui-monospace,monospace;font-size:12px;color:var(--muted);
+             white-space:pre-wrap;word-break:break-all;"></div>
         <p style="color:var(--muted);font-size:12px;margin-top:12px;">
             Credentials are stored in <code>mt5_account.yaml</code> (git-ignored) with 0600 permissions.
             The bot uses magic number <code>240411</code> and only touches trades it placed — any other trades
@@ -676,10 +681,46 @@ async function testMT5Connection() {
         } else {
             msg.textContent = `✗ ${d.error || "connection failed"}`;
             msg.style.color = "var(--red)";
+            // If the package isn't installed, auto-show diagnostics for clarity
+            if (String(d.error || "").toLowerCase().includes("not installed")) {
+                showMT5Diagnostics();
+            }
         }
     } catch (e) {
         msg.textContent = `✗ ${e}`;
         msg.style.color = "var(--red)";
+    }
+}
+
+async function showMT5Diagnostics() {
+    const el = document.getElementById("mt5-diagnostics");
+    el.style.display = "";
+    el.textContent = "loading diagnostics…";
+    try {
+        const r = await fetch("/api/settings/mt5/diagnostics");
+        const d = await r.json();
+        let out = "";
+        out += `Python:   ${d.python_executable}\n`;
+        out += `Version:  ${(d.python_version || "").split(" ")[0]}\n`;
+        out += `Platform: ${d.platform}\n`;
+        out += `MT5 installed: ${d.mt5_installed ? "YES (v" + d.mt5_version + ")" : "NO"}\n`;
+        if (!d.mt5_installed) {
+            out += "\n";
+            out += "FIX — run this in a terminal, then restart the bot:\n";
+            out += `  ${d.install_hint}\n`;
+            if (!d.is_windows) {
+                out += "\n";
+                out += "NOTE: MetaTrader5 Python bindings are Windows-only.\n";
+                out += "On macOS/Linux you can use paper mode or the Binance broker.\n";
+            }
+        } else {
+            out += "\n";
+            out += "✓ Package is installed. If Test Connection still fails,\n";
+            out += "  check: MT5 terminal is running, login/server are correct.\n";
+        }
+        el.textContent = out;
+    } catch (e) {
+        el.textContent = `Diagnostics failed: ${e}`;
     }
 }
 

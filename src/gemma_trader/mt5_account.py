@@ -126,15 +126,24 @@ class MT5Account:
             import MetaTrader5 as mt5
             self._mt5 = mt5
             return mt5
-        except ImportError:
-            logger.warning("MetaTrader5 package not installed")
+        except ImportError as e:
+            import sys
+            logger.warning(
+                f"MetaTrader5 package not installed in {sys.executable}. "
+                f"Install it with: {sys.executable} -m pip install MetaTrader5"
+            )
+            self._import_error = (
+                f"Not installed in {sys.executable}. "
+                f"Run: {sys.executable} -m pip install MetaTrader5"
+            )
             return None
 
     def connect(self) -> tuple[bool, str]:
         """Initialize MT5 and log in. Returns (ok, error_message)."""
         mt5 = self._import_mt5()
         if mt5 is None:
-            return False, "MetaTrader5 package not installed"
+            detail = getattr(self, "_import_error", "MetaTrader5 package not installed")
+            return False, f"MetaTrader5 package not installed — {detail}"
 
         if not self.is_configured():
             return False, "Account not configured"

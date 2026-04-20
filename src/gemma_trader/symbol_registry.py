@@ -37,6 +37,7 @@ class Symbol:
     generic: str
     enabled: bool = True
     active: bool = True
+    lot_size: float = 0.01
     aliases: dict = field(default_factory=dict)
 
     def resolve(self, broker: str) -> str:
@@ -71,6 +72,7 @@ class SymbolRegistry:
                     generic=entry["generic"],
                     enabled=bool(entry.get("enabled", True)),
                     active=bool(entry.get("active", True)),
+                    lot_size=float(entry.get("lot_size", 0.01)),
                     aliases=dict(entry.get("aliases") or {}),
                 )
                 self.symbols[s.generic] = s
@@ -112,7 +114,8 @@ class SymbolRegistry:
 
     # ── mutations ──
     def upsert(self, generic: str, aliases: Optional[dict] = None,
-               enabled: bool = True, active: bool = True) -> Symbol:
+               enabled: bool = True, active: bool = True,
+               lot_size: Optional[float] = None) -> Symbol:
         generic = generic.strip()
         if not generic:
             raise ValueError("generic name required")
@@ -122,16 +125,31 @@ class SymbolRegistry:
                 existing.aliases = dict(aliases)
             existing.enabled = bool(enabled)
             existing.active = bool(active)
+            if lot_size is not None:
+                existing.lot_size = float(lot_size)
         else:
             existing = Symbol(
                 generic=generic,
                 enabled=bool(enabled),
                 active=bool(active),
+                lot_size=float(lot_size) if lot_size is not None else 0.01,
                 aliases=dict(aliases or {}),
             )
             self.symbols[generic] = existing
         self.save()
         return existing
+
+    def set_lot_size(self, generic: str, lot_size: float) -> bool:
+        s = self.symbols.get(generic)
+        if not s:
+            return False
+        s.lot_size = float(lot_size)
+        self.save()
+        return True
+
+    def get_lot_size(self, generic: str) -> float:
+        s = self.symbols.get(generic)
+        return float(s.lot_size) if s else 0.01
 
     def remove(self, generic: str) -> bool:
         if generic in self.symbols:

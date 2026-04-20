@@ -574,6 +574,193 @@ def api_settings_news_delete(index: int):
     return jsonify({"status": "ok" if ok else "not_found"})
 
 
+# ─── MT5 Account Settings ───
+
+@app.route("/api/settings/mt5/account", methods=["GET"])
+def api_settings_mt5_account_get():
+    """Return masked MT5 account config (never returns raw password)."""
+    try:
+        from gemma_trader.mt5_account import get_account
+        acct = get_account()
+        return jsonify(acct.get_masked_config())
+    except Exception as e:
+        logger.warning(f"mt5 account get failed: {e}")
+        return jsonify({"configured": False, "error": str(e)})
+
+
+@app.route("/api/settings/mt5/account", methods=["POST"])
+def api_settings_mt5_account_post():
+    """Save MT5 account credentials. Body: {login, password, server, path?}."""
+    try:
+        from gemma_trader.mt5_account import get_account
+        data = request.get_json() or {}
+        login = int(data.get("login", 0) or 0)
+        password = str(data.get("password", "") or "")
+        server = str(data.get("server", "") or "").strip()
+        path = str(data.get("path", "") or "").strip()
+
+        if login <= 0:
+            return jsonify({"ok": False, "error": "login must be a positive integer"}), 400
+        if not server:
+            return jsonify({"ok": False, "error": "server is required"}), 400
+
+        acct = get_account()
+        # If password omitted (UI sent "***"), preserve the existing one
+        if password in ("", "***"):
+            existing = acct._config.get("password", "")
+            if not existing:
+                return jsonify({"ok": False, "error": "password required on first save"}), 400
+            password = existing
+
+        acct.save(login=login, password=password, server=server, path=path)
+        # Follow-up: test the connection
+        test = acct.test_connection()
+        return jsonify({"ok": True, "saved": True, "test": test})
+    except Exception as e:
+        logger.warning(f"mt5 account post failed: {e}")
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/settings/mt5/test", methods=["POST"])
+def api_settings_mt5_test():
+    """Test MT5 connection using saved credentials."""
+    try:
+        from gemma_trader.mt5_account import get_account
+        return jsonify(get_account().test_connection())
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+
+@app.route("/api/settings/mt5/info", methods=["GET"])
+def api_settings_mt5_info():
+    """Return live account info (balance, equity, leverage)."""
+    try:
+        from gemma_trader.mt5_account import get_account
+        info = get_account().get_info()
+        if info is None:
+            return jsonify({"ok": False, "error": "not connected or account_info unavailable"})
+        return jsonify({"ok": True, "info": info})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+
+@app.route("/api/settings/mt5/symbols", methods=["GET"])
+def api_settings_mt5_symbols_list():
+    """
+    Return broker symbol list with lot metadata merged with registry state.
+    Query params:
+      ?search=BTC   filter by name/description (case-insensitive)
+      ?limit=500    cap results (default 500; full list can be 3000+)
+    """
+    try:
+        from gemma_trader.mt5_account import get_account
+        from gemma_trader.symbol_registry import get_registry
+
+        acct = get_account()
+        registry = get_registry()
+
+        search = (request.args.get("search") or "").upper().strip()
+        try:
+            limit = int(request.args.get("limit", 500))
+        except ValueError:
+            limit = 500
+
+        broker_symbols = acct.list_symbols()
+        if not broker_symbols:
+            return jsonify({"ok": False, "error": "MT5 not connected or no symbols", "symbols": []})
+
+        # Registered-in-bot state keyed by generic (upper-case)
+        registered = {s["generic"].upper(): s for s in registry.list()}
+
+        out = []
+        for s in broker_symbols:
+            name = s["name"]
+            desc = s.get("description", "")
+            if search and search not in name.upper() and search not in desc.upper():
+                continue
+            reg = registered.get(name.upper())
+            out.append({
+                **s,
+                "enabled": bool(reg["enabled"]) if reg else False,
+                "active": bool(reg["active"]) if reg else False,
+                "lot_size": float(reg.get("lot_size", 0.01)) if reg else s["min_lot"],
+            })
+            if len(out) >= limit:
+                break
+
+        return jsonify({"ok": True, "symbols": out, "total": len(out)})
+    except Exception as e:
+        logger.warning(f"mt5 symbols list failed: {e}")
+        return jsonify({"ok": False, "error": str(e), "symbols": []})
+
+
+@app.route("/api/settings/mt5/symbols", methods=["POST"])
+def api_settings_mt5_symbols_save():
+    """
+    Bulk upsert selected symbols with lot sizes.
+    Body: {symbols: [{generic, enabled, lot_size}]}
+    """
+    try:
+        from gemma_trader.symbol_registry import get_registry
+
+        data = request.get_json() or {}
+        entries = data.get("symbols") or []
+        if not isinstance(entries, list):
+            return jsonify({"ok": False, "error": "symbols must be a list"}), 400
+
+        registry = get_registry()
+        active_broker = registry.active_broker
+        updated = []
+
+        for entry in entries:
+            generic = str(entry.get("generic", "")).strip()
+            if not generic:
+                continue
+            enabled = bool(entry.get("enabled", True))
+            lot_size = float(entry.get("lot_size", 0.01) or 0.01)
+            # MT5 uses the same symbol name as the generic (user-matched)
+            aliases = {active_broker: generic}
+            registry.upsert(
+                generic,
+                aliases=aliases,
+                enabled=enabled,
+                active=enabled,  # active == enabled for simplicity
+                lot_size=lot_size,
+            )
+            updated.append(generic)
+
+        return jsonify({
+            "ok": True,
+            "updated": updated,
+            "registry": {
+                "active_broker": registry.active_broker,
+                "symbols": registry.list(),
+            },
+        })
+    except Exception as e:
+        logger.warning(f"mt5 symbols save failed: {e}")
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+# ─── Hallucination audit ───
+
+@app.route("/api/hallucinations", methods=["GET"])
+def api_hallucinations():
+    """Return last 100 hallucination events for audit."""
+    path = LOGS_DIR / "hallucinations.json"
+    entries = read_json_log(path)
+    # Summary counts by flag
+    counts = {}
+    for e in entries:
+        for flag in e.get("flags", []):
+            counts[flag] = counts.get(flag, 0) + 1
+    return jsonify({
+        "total": len(entries),
+        "recent": entries[-100:],
+        "counts_by_flag": counts,
+    })
+
+
 # ─── Main (standalone mode) ───
 
 def main():

@@ -1,0 +1,14 @@
+# MT5 Account Credentials
+# =========================
+# Copy this file to mt5_account.yaml and fill in your credentials.
+# This file is gitignored for safety.
+#
+# Alternatively, configure via the /settings page in the dashboard —
+# it will write this file for you.
+
+login: 0                    # Your MT5 account number
+password: ""                # Your MT5 password
+server: ""                  # Broker server, e.g. "ICMarkets-Demo"
+path: ""                    # Optional: path to terminal64.exe
+                            # Only needed if you have multiple MT5 installs.
+                            # Leave empty to use the default MT5 installation.

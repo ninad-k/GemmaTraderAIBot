@@ -213,9 +213,15 @@ class MT5DataFeed:
             "time": datetime.fromtimestamp(tick.time).isoformat(),
         }
 
-    def get_positions(self, symbol: str = None) -> list:
+    def get_positions(self, symbol: str = None, own_only: bool = True) -> list:
         """
         Get open positions, optionally filtered by symbol.
+
+        Args:
+            symbol: optional symbol filter (resolved via registry)
+            own_only: if True (default), only return positions owned by this bot
+                (magic=240411). Set False to get ALL positions on the account
+                (useful for dashboard account-level aggregation).
 
         Returns:
             List of position dicts.
@@ -233,6 +239,8 @@ class MT5DataFeed:
 
         result = []
         for pos in positions:
+            if own_only and int(getattr(pos, "magic", 0)) != 240411:
+                continue
             result.append({
                 "ticket": pos.ticket,
                 "symbol": pos.symbol,

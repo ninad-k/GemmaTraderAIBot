@@ -74,6 +74,106 @@
     <a href="/">← Dashboard</a>
 </header>
 <main>
+    <!-- ─── MT5 Account Connection ─── -->
+    <div class="card" id="mt5-card">
+        <h2>MT5 Account Connection</h2>
+        <div id="mt5-status-banner" class="row" style="margin-bottom:16px;">
+            <span class="pill">
+                <span class="k">status:</span>
+                <span id="mt5-status-text" style="color:var(--muted);">not configured</span>
+            </span>
+            <span id="mt5-balance-pill" class="pill" style="display:none;">
+                <span class="k">balance:</span>
+                <span id="mt5-balance">–</span>
+            </span>
+            <span id="mt5-currency-pill" class="pill" style="display:none;">
+                <span class="k">currency:</span>
+                <span id="mt5-currency">–</span>
+            </span>
+            <span id="mt5-leverage-pill" class="pill" style="display:none;">
+                <span class="k">leverage:</span>
+                <span id="mt5-leverage">–</span>
+            </span>
+        </div>
+
+        <div class="row" style="margin-bottom:12px;">
+            <div>
+                <label>Login</label>
+                <input id="mt5-login" type="number" placeholder="12345678" style="width:180px">
+            </div>
+            <div>
+                <label>Password</label>
+                <input id="mt5-password" type="password" placeholder="••••••••" style="width:180px">
+            </div>
+            <div>
+                <label>Server</label>
+                <input id="mt5-server" type="text" placeholder="ICMarkets-Demo" style="width:220px">
+            </div>
+            <div>
+                <label>Terminal path (optional)</label>
+                <input id="mt5-path" type="text" placeholder="C:\...\terminal64.exe" style="width:260px">
+            </div>
+        </div>
+        <div class="row">
+            <button onclick="testMT5Connection()">Test Connection</button>
+            <button onclick="saveMT5Account()">Save &amp; Connect</button>
+            <span id="mt5-msg" style="color:var(--muted);font-size:12px;"></span>
+        </div>
+        <p style="color:var(--muted);font-size:12px;margin-top:12px;">
+            Credentials are stored in <code>mt5_account.yaml</code> (git-ignored) with 0600 permissions.
+            The bot uses magic number <code>240411</code> and only touches trades it placed — any other trades
+            on this account are ignored.
+        </p>
+    </div>
+
+    <!-- ─── MT5 Account Info (auto-populated once connected) ─── -->
+    <div class="card" id="mt5-info-card" style="display:none;">
+        <h2>Account Info</h2>
+        <div class="row">
+            <span class="pill"><span class="k">account:</span> <span id="mt5-info-login">–</span></span>
+            <span class="pill"><span class="k">name:</span> <span id="mt5-info-name">–</span></span>
+            <span class="pill"><span class="k">server:</span> <span id="mt5-info-server">–</span></span>
+            <span class="pill"><span class="k">balance:</span> <span id="mt5-info-balance">–</span></span>
+            <span class="pill"><span class="k">equity:</span> <span id="mt5-info-equity">–</span></span>
+            <span class="pill"><span class="k">margin:</span> <span id="mt5-info-margin">–</span></span>
+            <span class="pill"><span class="k">free:</span> <span id="mt5-info-free">–</span></span>
+            <span class="pill"><span class="k">leverage:</span> <span id="mt5-info-leverage">–</span></span>
+        </div>
+    </div>
+
+    <!-- ─── MT5 Symbol Selection (auto-populated once connected) ─── -->
+    <div class="card" id="mt5-symbols-card" style="display:none;">
+        <h2>Trading Symbols &amp; Lot Sizes</h2>
+        <div class="row" style="margin-bottom:12px;">
+            <input id="mt5-symbol-search" type="text" placeholder="Search symbol (e.g. BTC, GOLD)" style="width:280px"
+                   oninput="filterMT5Symbols()">
+            <button class="ghost" onclick="selectAllMT5Symbols(true)">Select All</button>
+            <button class="ghost" onclick="selectAllMT5Symbols(false)">Clear</button>
+            <button onclick="saveMT5Symbols()">Save Selection</button>
+            <span id="mt5-symbols-count" style="color:var(--muted);font-size:12px;"></span>
+        </div>
+        <div style="max-height:480px;overflow-y:auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width:40px;">✓</th>
+                        <th>Symbol</th>
+                        <th>Description</th>
+                        <th>Lot Size</th>
+                        <th>Min</th>
+                        <th>Max</th>
+                        <th>Step</th>
+                    </tr>
+                </thead>
+                <tbody id="mt5-symbols-tbody"></tbody>
+            </table>
+        </div>
+        <p style="color:var(--muted);font-size:12px;margin-top:12px;">
+            Only selected symbols will be traded. Lot size is fixed per symbol (not risk-based).
+            The bot will reject any hallucinated symbols from Gemma that aren't in this list.
+        </p>
+    </div>
+
     <div class="card">
         <h2>Active Broker</h2>
         <div class="row">
@@ -447,11 +547,224 @@ async function runBacktest() {
     document.getElementById("bt-out").textContent = JSON.stringify(d, null, 2);
 }
 
+// ─── MT5 Account ───
+let MT5_SYMBOLS_CACHE = [];
+
+async function loadMT5Account() {
+    try {
+        const r = await fetch("/api/settings/mt5/account");
+        const d = await r.json();
+        if (d.login) document.getElementById("mt5-login").value = d.login;
+        if (d.server) document.getElementById("mt5-server").value = d.server;
+        if (d.path) document.getElementById("mt5-path").value = d.path;
+        if (d.has_password) {
+            document.getElementById("mt5-password").placeholder = "•••• (saved, leave blank to keep)";
+        }
+        if (d.configured) {
+            await refreshMT5Info();
+        } else {
+            document.getElementById("mt5-status-text").textContent = "not configured";
+            document.getElementById("mt5-status-text").style.color = "var(--muted)";
+        }
+    } catch (e) {
+        console.warn("loadMT5Account error:", e);
+    }
+}
+
+async function testMT5Connection() {
+    const msg = document.getElementById("mt5-msg");
+    msg.textContent = "testing connection…";
+    msg.style.color = "var(--muted)";
+    try {
+        const r = await fetch("/api/settings/mt5/test", {method:"POST"});
+        const d = await r.json();
+        if (d.ok) {
+            msg.textContent = `✓ connected — balance ${d.balance} ${d.currency}`;
+            msg.style.color = "var(--green)";
+        } else {
+            msg.textContent = `✗ ${d.error || "connection failed"}`;
+            msg.style.color = "var(--red)";
+        }
+    } catch (e) {
+        msg.textContent = `✗ ${e}`;
+        msg.style.color = "var(--red)";
+    }
+}
+
+async function saveMT5Account() {
+    const login = parseInt(document.getElementById("mt5-login").value || "0");
+    const password = document.getElementById("mt5-password").value || "";
+    const server = document.getElementById("mt5-server").value || "";
+    const path = document.getElementById("mt5-path").value || "";
+    const msg = document.getElementById("mt5-msg");
+
+    if (!login || !server) {
+        msg.textContent = "✗ login and server are required";
+        msg.style.color = "var(--red)";
+        return;
+    }
+
+    msg.textContent = "saving…";
+    msg.style.color = "var(--muted)";
+    try {
+        const r = await fetch("/api/settings/mt5/account", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({login, password: password || "***", server, path}),
+        });
+        const d = await r.json();
+        if (d.ok) {
+            msg.textContent = "✓ saved";
+            msg.style.color = "var(--green)";
+            document.getElementById("mt5-password").value = "";
+            document.getElementById("mt5-password").placeholder = "•••• (saved, leave blank to keep)";
+            if (d.test && d.test.ok) {
+                await refreshMT5Info();
+                await loadMT5Symbols();
+            } else if (d.test) {
+                msg.textContent = `✓ saved, but connection failed: ${d.test.error || "unknown"}`;
+                msg.style.color = "var(--orange)";
+            }
+        } else {
+            msg.textContent = `✗ ${d.error || "save failed"}`;
+            msg.style.color = "var(--red)";
+        }
+    } catch (e) {
+        msg.textContent = `✗ ${e}`;
+        msg.style.color = "var(--red)";
+    }
+}
+
+async function refreshMT5Info() {
+    try {
+        const r = await fetch("/api/settings/mt5/info");
+        const d = await r.json();
+        if (!d.ok || !d.info) {
+            document.getElementById("mt5-status-text").textContent = "not connected";
+            document.getElementById("mt5-status-text").style.color = "var(--red)";
+            return;
+        }
+        const info = d.info;
+        document.getElementById("mt5-status-text").textContent = "connected";
+        document.getElementById("mt5-status-text").style.color = "var(--green)";
+        document.getElementById("mt5-balance").textContent = info.balance.toFixed(2);
+        document.getElementById("mt5-currency").textContent = info.currency;
+        document.getElementById("mt5-leverage").textContent = `1:${info.leverage}`;
+        document.getElementById("mt5-balance-pill").style.display = "";
+        document.getElementById("mt5-currency-pill").style.display = "";
+        document.getElementById("mt5-leverage-pill").style.display = "";
+
+        // Account info card
+        document.getElementById("mt5-info-card").style.display = "";
+        document.getElementById("mt5-info-login").textContent = info.login;
+        document.getElementById("mt5-info-name").textContent = info.name || "–";
+        document.getElementById("mt5-info-server").textContent = info.server;
+        document.getElementById("mt5-info-balance").textContent = `${info.balance.toFixed(2)} ${info.currency}`;
+        document.getElementById("mt5-info-equity").textContent = info.equity.toFixed(2);
+        document.getElementById("mt5-info-margin").textContent = info.margin.toFixed(2);
+        document.getElementById("mt5-info-free").textContent = info.margin_free.toFixed(2);
+        document.getElementById("mt5-info-leverage").textContent = `1:${info.leverage}`;
+
+        // Symbols card
+        document.getElementById("mt5-symbols-card").style.display = "";
+        await loadMT5Symbols();
+    } catch (e) {
+        console.warn("refreshMT5Info error:", e);
+    }
+}
+
+async function loadMT5Symbols() {
+    try {
+        const r = await fetch("/api/settings/mt5/symbols?limit=500");
+        const d = await r.json();
+        MT5_SYMBOLS_CACHE = d.symbols || [];
+        renderMT5Symbols(MT5_SYMBOLS_CACHE);
+    } catch (e) {
+        console.warn("loadMT5Symbols error:", e);
+    }
+}
+
+function renderMT5Symbols(list) {
+    const tbody = document.getElementById("mt5-symbols-tbody");
+    tbody.innerHTML = list.map((s, i) => `
+        <tr>
+            <td><input type="checkbox" data-idx="${i}" ${s.enabled ? "checked" : ""}></td>
+            <td style="font-family:ui-monospace,monospace;">${s.name}</td>
+            <td style="color:var(--muted);">${s.description || ""}</td>
+            <td><input type="number" data-lot="${i}" value="${s.lot_size}"
+                       min="${s.min_lot}" max="${s.max_lot}" step="${s.step}"
+                       style="width:90px"></td>
+            <td style="color:var(--muted);">${s.min_lot}</td>
+            <td style="color:var(--muted);">${s.max_lot}</td>
+            <td style="color:var(--muted);">${s.step}</td>
+        </tr>
+    `).join("");
+    document.getElementById("mt5-symbols-count").textContent = `${list.length} symbols shown`;
+}
+
+function filterMT5Symbols() {
+    const q = document.getElementById("mt5-symbol-search").value.toUpperCase();
+    if (!q) { renderMT5Symbols(MT5_SYMBOLS_CACHE); return; }
+    const filtered = MT5_SYMBOLS_CACHE.filter(s =>
+        s.name.toUpperCase().includes(q) ||
+        (s.description || "").toUpperCase().includes(q)
+    );
+    renderMT5Symbols(filtered);
+}
+
+function selectAllMT5Symbols(checked) {
+    document.querySelectorAll("#mt5-symbols-tbody input[type=checkbox]")
+        .forEach(cb => cb.checked = checked);
+}
+
+async function saveMT5Symbols() {
+    const entries = [];
+    document.querySelectorAll("#mt5-symbols-tbody tr").forEach((row, i) => {
+        const cb = row.querySelector("input[type=checkbox]");
+        const lot = row.querySelector("input[type=number]");
+        if (!cb) return;
+        // Use cached list to get the symbol name (filter-safe)
+        const idx = parseInt(cb.getAttribute("data-idx"));
+        const visibleList = MT5_SYMBOLS_CACHE.filter((_, ix) => {
+            const q = document.getElementById("mt5-symbol-search").value.toUpperCase();
+            if (!q) return true;
+            const s = MT5_SYMBOLS_CACHE[ix];
+            return s.name.toUpperCase().includes(q) || (s.description || "").toUpperCase().includes(q);
+        });
+        const symbol = visibleList[i] || MT5_SYMBOLS_CACHE[idx];
+        if (!symbol) return;
+        entries.push({
+            generic: symbol.name,
+            enabled: cb.checked,
+            lot_size: parseFloat(lot.value) || symbol.min_lot,
+        });
+    });
+
+    const r = await fetch("/api/settings/mt5/symbols", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({symbols: entries}),
+    });
+    const d = await r.json();
+    if (d.ok) {
+        toast(`✓ saved ${d.updated.length} symbols`);
+        loadAll();  // refresh the old symbols card too
+    } else {
+        toast(`✗ ${d.error}`);
+    }
+}
+
+function toast(msg) {
+    const el = document.getElementById("mt5-symbols-count");
+    if (el) { el.textContent = msg; setTimeout(() => el.textContent = "", 3000); }
+}
+
 loadAll();
 loadSafety();
 loadNotifs();
 loadNews();
 loadMetrics();
+loadMT5Account();
 setInterval(loadSafety, 5000);
 </script>
 </body>

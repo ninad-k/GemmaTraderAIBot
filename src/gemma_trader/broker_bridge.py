@@ -200,7 +200,14 @@ class MT5Broker(BaseBroker):
         if not positions:
             return {"status": "no_position"}
 
-        for pos in positions:
+        # Magic-number isolation: only close positions owned by this bot.
+        # Foreign positions (other strategies, manual trades) are ignored.
+        own_positions = [p for p in positions if int(getattr(p, "magic", 0)) == 240411]
+        if not own_positions:
+            logger.info(f"No bot-owned position for {symbol} (magic=240411)")
+            return {"status": "no_position"}
+
+        for pos in own_positions:
             close_type = self.mt5.ORDER_TYPE_SELL if pos.type == 0 else self.mt5.ORDER_TYPE_BUY
             tick = self.mt5.symbol_info_tick(symbol)
             price = tick.bid if pos.type == 0 else tick.ask

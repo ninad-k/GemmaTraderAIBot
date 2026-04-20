@@ -8,6 +8,13 @@ numpy>=1.24
 schedule>=1.2
 eventlet>=0.35
 
+# Machine learning & optimization (for profitability enhancement suite)
+scikit-learn>=1.3         # ML utilities, walk-forward CV
+xgboost>=2.0              # Classical ML baseline
+hmmlearn>=0.3             # HMM regime detection
+shap>=0.44                # Feature importance analysis
+optuna>=3.5               # Bayesian hyperparameter optimization
+ccxt>=4.0                 # Historical OHLCV for backtester + Binance trading
+
 # Broker-specific (install as needed)
 # MetaTrader5>=5.0.45   # for MT5 trading (Windows only)
-# ccxt>=4.0             # for Binance/crypto trading

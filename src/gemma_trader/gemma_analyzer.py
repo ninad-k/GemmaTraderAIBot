@@ -9,15 +9,25 @@ Self-improving: loads adaptive context from past trade outcomes.
 
 import json
 import logging
+import math
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 import requests
 
 logger = logging.getLogger(__name__)
 
+HALLUCINATION_LOG = Path("logs/hallucinations.json")
+MAX_REASON_LENGTH = 500
+LOW_CONFIDENCE_FLOOR = 0.3
+MAX_SL_ATR = 5.0
+MIN_SL_ATR = 0.1
+MAX_TP_ATR = 5.0
+MIN_TP_ATR = 0.1
 
-SYSTEM_PROMPT = """You are Rey Capital's AI crypto scalping bot. You analyze 1-minute candle data across 30+ technical indicators and make precise, profitable trade decisions on cryptocurrency CFDs.
+
+SYSTEM_PROMPT = """You are Rey Capital's AI crypto scalping bot using Gemma 4. You analyze 1-minute candle data across 30+ technical indicators and make precise, profitable trade decisions on cryptocurrency CFDs.
 
 INSTRUMENTS (all 24/7 crypto CFDs):
 - BTCUSD: Bitcoin — king of crypto, highest liquidity, drives market sentiment. $70K+ range. Moves in waves, respect momentum.
@@ -100,8 +110,13 @@ def analyze_with_gemma(market_data: dict, config: dict) -> dict:
 
         decision = _parse_response(raw_response)
         decision["timestamp"] = datetime.now().isoformat()
-        decision["symbol"] = market_data.get("symbol", "UNKNOWN")
-        decision = _validate_decision(decision)
+        # Note: we pass the raw Gemma-returned symbol (if any) through to
+        # _validate_decision so it can detect symbol_mismatch hallucinations.
+        # If Gemma didn't set one, default to requested symbol.
+        if "symbol" not in decision:
+            decision["symbol"] = market_data.get("symbol", "UNKNOWN")
+        allowed = config.get("trading", {}).get("allowed_symbols")
+        decision = _validate_decision(decision, market_data=market_data, allowed_symbols=allowed)
 
         # Include Gemma's full thinking for journal/debug
         decision["raw_gemma_response"] = raw_response
@@ -217,19 +232,156 @@ def _parse_response(raw: str) -> dict:
         raise ValueError(f"Could not parse JSON from: {raw}")
 
 
-def _validate_decision(decision: dict) -> dict:
-    """Validate and sanitize the decision."""
-    valid_actions = {"BUY", "SELL", "HOLD"}
+def _safe_float(value, default: float = 0.0) -> float:
+    """Convert to float; replace NaN/Inf with default. Never raises."""
+    try:
+        f = float(value)
+        if math.isnan(f) or math.isinf(f):
+            return default
+        return f
+    except (ValueError, TypeError):
+        return default
 
-    if decision.get("action", "").upper() not in valid_actions:
+
+def _detect_hallucinations(
+    decision: dict,
+    market_data: Optional[dict] = None,
+    allowed_symbols: Optional[list[str]] = None,
+) -> list[str]:
+    """
+    Detect common LLM hallucination patterns. Returns list of flags.
+
+    Flags (informational — caller decides how to act):
+      - symbol_mismatch:      Gemma returned a different symbol than requested
+      - unknown_symbol:       Gemma's symbol not in allowed_symbols list
+      - nan_value:            NaN/Inf in confidence/sl/tp
+      - reason_too_long:      Reason > MAX_REASON_LENGTH chars
+      - low_confidence_trade: action=BUY/SELL but confidence < 0.3
+      - inverted_tp_sl:       TP distance < SL distance (unreachable profit)
+      - out_of_range_sl_tp:   SL/TP outside sane bounds
+      - invalid_action:       Action not in {BUY, SELL, HOLD}
+    """
+    flags = []
+
+    # 1. Symbol mismatch
+    if market_data and market_data.get("symbol"):
+        expected = str(market_data["symbol"]).upper()
+        returned = str(decision.get("symbol", "")).upper()
+        if returned and returned != "UNKNOWN" and returned != expected:
+            flags.append("symbol_mismatch")
+
+    # 2. Unknown symbol
+    if allowed_symbols:
+        returned = str(decision.get("symbol", "")).upper()
+        if returned and returned != "UNKNOWN" and returned not in {s.upper() for s in allowed_symbols}:
+            flags.append("unknown_symbol")
+
+    # 3. NaN/Inf in numerics
+    for key in ("confidence", "sl_distance_atr", "tp_distance_atr"):
+        v = decision.get(key)
+        if v is None:
+            continue
+        try:
+            f = float(v)
+            if math.isnan(f) or math.isinf(f):
+                flags.append("nan_value")
+                break
+        except (ValueError, TypeError):
+            pass
+
+    # 4. Reason too long
+    reason = str(decision.get("reason", ""))
+    if len(reason) > MAX_REASON_LENGTH:
+        flags.append("reason_too_long")
+
+    # 5. Invalid action
+    action = str(decision.get("action", "")).upper()
+    if action not in {"BUY", "SELL", "HOLD"}:
+        flags.append("invalid_action")
+
+    # 6. Low confidence trade
+    if action in {"BUY", "SELL"}:
+        conf = _safe_float(decision.get("confidence", 0), default=0.0)
+        if conf < LOW_CONFIDENCE_FLOOR:
+            flags.append("low_confidence_trade")
+
+    # 7. Inverted TP/SL
+    sl = _safe_float(decision.get("sl_distance_atr", 0))
+    tp = _safe_float(decision.get("tp_distance_atr", 0))
+    if action in {"BUY", "SELL"} and sl > 0 and tp > 0 and tp < sl:
+        flags.append("inverted_tp_sl")
+
+    # 8. Out-of-range SL/TP (reject absurd values from hallucinated responses)
+    if action in {"BUY", "SELL"}:
+        if sl > MAX_SL_ATR or (sl > 0 and sl < MIN_SL_ATR):
+            flags.append("out_of_range_sl_tp")
+        elif tp > MAX_TP_ATR or (tp > 0 and tp < MIN_TP_ATR):
+            flags.append("out_of_range_sl_tp")
+
+    return flags
+
+
+def _log_hallucination(
+    flags: list[str],
+    decision: dict,
+    market_data: Optional[dict] = None,
+) -> None:
+    """Append a hallucination event to logs/hallucinations.json (rolling 500)."""
+    if not flags:
+        return
+    try:
+        HALLUCINATION_LOG.parent.mkdir(parents=True, exist_ok=True)
+        entries = []
+        if HALLUCINATION_LOG.exists():
+            try:
+                entries = json.loads(HALLUCINATION_LOG.read_text(encoding="utf-8-sig"))
+                if not isinstance(entries, list):
+                    entries = []
+            except Exception:
+                entries = []
+        entries.append({
+            "timestamp": datetime.now().isoformat(),
+            "flags": flags,
+            "symbol_requested": (market_data or {}).get("symbol"),
+            "symbol_returned": decision.get("symbol"),
+            "action": decision.get("action"),
+            "confidence": decision.get("confidence"),
+            "sl_distance_atr": decision.get("sl_distance_atr"),
+            "tp_distance_atr": decision.get("tp_distance_atr"),
+            "reason_preview": str(decision.get("reason", ""))[:120],
+        })
+        # Keep last 500
+        entries = entries[-500:]
+        HALLUCINATION_LOG.write_text(
+            json.dumps(entries, indent=2, default=str),
+            encoding="utf-8",
+        )
+    except Exception as e:
+        logger.warning(f"Failed to write hallucination log: {e}")
+
+
+def _validate_decision(
+    decision: dict,
+    market_data: Optional[dict] = None,
+    allowed_symbols: Optional[list[str]] = None,
+) -> dict:
+    """
+    Validate, sanitize, and guard against hallucinated LLM output.
+
+    Any detected hallucination that could cause a bad trade is downgraded
+    to HOLD and logged to logs/hallucinations.json for audit.
+    """
+    # ── Normalize action ──
+    valid_actions = {"BUY", "SELL", "HOLD"}
+    if str(decision.get("action", "")).upper() not in valid_actions:
         decision["action"] = "HOLD"
         decision["confidence"] = 0.0
         decision["reason"] = "invalid action from model"
     else:
         decision["action"] = decision["action"].upper()
 
+    # ── Normalize confidence (handles string values from Gemma) ──
     raw_conf = decision.get("confidence", 0)
-    # Handle string confidence values from Gemma (e.g., "LOW", "HIGH")
     if isinstance(raw_conf, str):
         conf_map = {
             "very low": 0.15, "low": 0.3, "medium": 0.5, "moderate": 0.55,
@@ -237,18 +389,45 @@ def _validate_decision(decision: dict) -> dict:
         }
         conf = conf_map.get(raw_conf.strip().lower(), 0.5)
     else:
-        conf = float(raw_conf)
+        conf = _safe_float(raw_conf, default=0.0)
     decision["confidence"] = max(0.0, min(1.0, conf))
 
+    # ── Defaults ──
     decision.setdefault("sl_distance_atr", 1.0)
     decision.setdefault("tp_distance_atr", 1.5)
     decision.setdefault("reason", "no reason given")
 
-    # Clamp SL/TP to reasonable 1M scalping ranges
-    sl = float(decision["sl_distance_atr"])
-    tp = float(decision["tp_distance_atr"])
+    # ── Detect hallucinations BEFORE clamping (preserves original flags) ──
+    flags = _detect_hallucinations(decision, market_data, allowed_symbols)
+
+    # Symbol mismatch: force-correct to requested symbol
+    if "symbol_mismatch" in flags and market_data and market_data.get("symbol"):
+        decision["symbol"] = market_data["symbol"]
+
+    # Reason too long: truncate
+    if "reason_too_long" in flags:
+        decision["reason"] = str(decision["reason"])[: MAX_REASON_LENGTH - 3] + "..."
+
+    # Critical hallucinations → force HOLD
+    critical = {
+        "nan_value", "low_confidence_trade", "inverted_tp_sl",
+        "unknown_symbol", "invalid_action",
+    }
+    if any(f in critical for f in flags):
+        decision["action"] = "HOLD"
+        decision["confidence"] = 0.0
+        decision["reason"] = f"hallucination guard: {','.join(f for f in flags if f in critical)}"
+
+    # ── Clamp SL/TP to safe scalping ranges (even after guard) ──
+    sl = _safe_float(decision.get("sl_distance_atr"), default=1.0)
+    tp = _safe_float(decision.get("tp_distance_atr"), default=1.5)
     decision["sl_distance_atr"] = max(0.5, min(2.0, sl))
     decision["tp_distance_atr"] = max(0.75, min(3.0, tp))
+
+    # Log if any flags were raised (even non-critical)
+    if flags:
+        decision["hallucination_flags"] = flags
+        _log_hallucination(flags, decision, market_data)
 
     return decision
 

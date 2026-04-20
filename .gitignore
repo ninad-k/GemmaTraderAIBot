@@ -210,4 +210,5 @@ config.local.yaml
 # Rey Capital — secrets & local state
 notifications.yaml
 news_blackouts.yaml
+mt5_account.yaml
 # symbols.yaml IS committed (seeded defaults); override locally via /settings

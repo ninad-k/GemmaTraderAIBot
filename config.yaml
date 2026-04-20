@@ -17,14 +17,14 @@ mt5_data:
 # --- AI Model ---
 ollama:
   url: "http://localhost:11434/api/generate"
-  model: "gemma4"
+  model: "gemma4:latest"
   temperature: 0.1
   timeout: 120
   num_predict: 8192
 
 # --- Trading ---
 trading:
-  mode: "live"
+  mode: "paper"
   confidence_threshold: 0.65  # slightly higher for live crypto trading
   max_position_size_pct: 1.0  # 1% of account per trade (conservative for live)
   max_open_trades: 5
@@ -101,3 +101,46 @@ logging:
   outcome_log: "logs/trade_outcomes.json"
   adaptive_context: "logs/adaptive_context.txt"
   parameter_adjustments: "logs/parameter_adjustments.json"
+
+# --- Storage (SQLite migration) ---
+storage:
+  enabled: true
+  db_path: "logs/trading.db"
+  # Dual-write to both JSON (legacy) and SQLite during migration period
+  dual_write: true
+
+# --- Advanced Features (Phase 2 profitability enhancement) ---
+advanced_features:
+  enabled: true
+  # Pre-trade gate: reject trades when spread > 25% of ATR
+  spread_filter: true
+  max_spread_atr_ratio: 0.25
+  # Pre-trade gate: reject trades during dead-volume periods
+  volume_filter: true
+  min_volume_zscore: -1.5
+
+# --- Regime Detection (HMM) ---
+regime:
+  enabled: true
+  n_states: 4
+  model_path: "logs/hmm_model.pkl"
+  # Retrain cadence (days). Skipped if fewer than min_fit_samples.
+  retrain_every_days: 7
+  min_fit_samples: 500
+
+# --- ML Baseline (XGBoost) ---
+ml_baseline:
+  enabled: false           # Opt-in. Only enable once you have 100+ outcomes.
+  model_path: "logs/ml_baseline.pkl"
+  min_ml_prob: 0.55        # Veto trades below this threshold
+  retrain_every_n_trades: 50
+  # If true, ML veto blocks the trade. If false, logged only (advisory mode).
+  enforce_veto: false
+
+# --- Hyperparameter Optimization ---
+hyperopt:
+  # Run via CLI: python -m gemma_trader.hyperopt --symbol BTC/USDT --days 90
+  # Does not run automatically — user must review config.optimized.yaml diff.
+  default_trials: 50
+  default_days: 90
+  default_timeframe: "1h"
